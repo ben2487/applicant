@@ -1,0 +1,53 @@
+[tool.poetry]
+name = "applicant"
+version = "0.1.0"
+description = "Python browser automation starter using Playwright"
+authors = ["ben2487"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.9"
+playwright = "^1.55.0"
+pytest = "^8.4.1"
+pytest-playwright = "^0.7.0"
+ruff = "^0.12.11"
+black = "^25.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest-cov = "^5.0.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+known-first-party = ["automation"]
+known-third-party = ["playwright", "pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')"
+]
