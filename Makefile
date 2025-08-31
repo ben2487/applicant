@@ -1,32 +1,25 @@
-.PHONY: help install test run lint fmt clean install-browsers
+.PHONY: setup test lint fmt run list test-ai help
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  install          - Install dependencies"
-	@echo "  install-browsers - Install Playwright browsers"
-	@echo "  test            - Run tests"
-	@echo "  run             - Run example automation flow"
-	@echo "  lint            - Run linting with ruff"
-	@echo "  fmt             - Format code with black"
-	@echo "  clean           - Clean up generated files"
-	@echo "  help            - Show this help message"
+	@echo "  setup          - Install dependencies and Playwright browsers"
+	@echo "  test           - Run tests"
+	@echo "  lint           - Run linting with ruff"
+	@echo "  fmt            - Format code with ruff and black"
+	@echo "  list           - List Chrome browser profiles"
+	@echo "  run            - Run automation (auto-attaches to existing Chrome or launches new)"
+	@echo "  test-ai        - Test OpenAI API key with GPT-5o-mini"
+	@echo "  help           - Show this help message"
 
-# Install dependencies
-install:
+# Install dependencies and Playwright browsers
+setup:
 	poetry install
-
-# Install Playwright browsers
-install-browsers:
 	poetry run playwright install --with-deps
 
 # Run tests
 test:
-	PYTHONPATH=src poetry run pytest tests/ -v
-
-# Run example automation flow
-run:
-	PYTHONPATH=src poetry run python -m automation.example_flow
+	poetry run pytest -q
 
 # Run linting
 lint:
@@ -34,8 +27,20 @@ lint:
 
 # Format code
 fmt:
-	poetry run black .
 	poetry run ruff check --fix .
+	poetry run black .
+
+# List Chrome profiles
+list:
+	cd src && poetry run python -m webbot.cli list-browser-profiles
+
+# Test OpenAI API key
+test-ai:
+	cd src && poetry run python -m webbot.cli test-openai-key
+
+# Run example automation
+run:
+	cd src && poetry run python -m webbot.cli run --use-browser-profile "Default" --initial-job-url "https://www.workatastartup.com/jobs/74132"
 
 # Clean up generated files
 clean:
@@ -48,7 +53,3 @@ clean:
 	find . -type d -name ".coverage" -delete 2>/dev/null || true
 	find . -type f -name "coverage.xml" -delete 2>/dev/null || true
 
-# Development setup
-dev-setup: install install-browsers
-	@echo "Development environment setup complete!"
-	@echo "Run 'make test' to verify everything is working."
