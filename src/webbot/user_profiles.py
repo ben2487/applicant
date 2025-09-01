@@ -10,7 +10,13 @@ from pydantic import BaseModel
 class UserSecrets(BaseModel):
     """User-specific secrets configuration."""
     google_drive_credentials: Optional[Dict[str, Any]] = None
-    # Future: other API keys, tokens, etc.
+    google_drive_user: Optional[str] = None  # human-readable Google account email/name
+
+
+class UserSettings(BaseModel):
+    """User-specific non-secret settings."""
+    human_name: str = "Ben Mowery"
+    google_drive_resume_path: str = "My Drive/J/Resume"
 
 
 @dataclass
@@ -28,6 +34,43 @@ def get_user_profiles_root() -> Path:
     return project_root / "user_profiles"
 
 
+def _secrets_path(profile_path: Path) -> Path:
+    return profile_path / "secrets.json"
+
+
+def _settings_path(profile_path: Path) -> Path:
+    return profile_path / "settings.json"
+
+
+def _load_secrets_from_path(profile_path: Path) -> UserSecrets:
+    secrets_file = _secrets_path(profile_path)
+    if secrets_file.exists():
+        try:
+            with open(secrets_file, 'r') as f:
+                data = json.load(f)
+                return UserSecrets(**data)
+        except Exception:
+            pass
+    return UserSecrets()
+
+
+def _load_settings_from_path(profile_path: Path) -> UserSettings:
+    settings_file = _settings_path(profile_path)
+    if settings_file.exists():
+        try:
+            with open(settings_file, 'r') as f:
+                data = json.load(f)
+                return UserSettings(**data)
+        except Exception:
+            pass
+    # Create defaults if missing
+    settings = UserSettings()
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(settings_file, 'w') as f:
+        json.dump(settings.model_dump(), f, indent=2)
+    return settings
+
+
 def discover_user_profiles() -> list[UserProfile]:
     """Discover all available user profiles."""
     root = get_user_profiles_root()
@@ -37,23 +80,11 @@ def discover_user_profiles() -> list[UserProfile]:
     profiles = []
     for item in root.iterdir():
         if item.is_dir():
-            profile_name = item.name
-            secrets_file = item / "secrets.json"
-            secrets = UserSecrets()
-            
-            if secrets_file.exists():
-                try:
-                    with open(secrets_file, 'r') as f:
-                        secrets_data = json.load(f)
-                        secrets = UserSecrets(**secrets_data)
-                except Exception:
-                    # If secrets file is corrupted, use empty secrets
-                    pass
-            
+            secrets = _load_secrets_from_path(item)
             profile = UserProfile(
-                name=profile_name,
+                name=item.name,
                 path=item,
-                secrets=secrets
+                secrets=secrets,
             )
             profiles.append(profile)
     
@@ -82,9 +113,11 @@ def create_user_profile(name: str) -> UserProfile:
     
     # Create initial secrets file
     secrets = UserSecrets()
-    secrets_file = profile_path / "secrets.json"
-    with open(secrets_file, 'w') as f:
+    with open(_secrets_path(profile_path), 'w') as f:
         json.dump(secrets.model_dump(), f, indent=2)
+
+    # Create initial settings file with defaults
+    _load_settings_from_path(profile_path)
     
     return UserProfile(
         name=name,
@@ -95,10 +128,20 @@ def create_user_profile(name: str) -> UserProfile:
 
 def update_user_secrets(profile: UserProfile, secrets: UserSecrets) -> None:
     """Update the secrets for a user profile."""
-    secrets_file = profile.path / "secrets.json"
+    secrets_file = _secrets_path(profile.path)
     with open(secrets_file, 'w') as f:
         json.dump(secrets.model_dump(), f, indent=2)
     profile.secrets = secrets
+
+
+def load_user_settings(profile: UserProfile) -> UserSettings:
+    return _load_settings_from_path(profile.path)
+
+
+def save_user_settings(profile: UserProfile, settings: UserSettings) -> None:
+    settings_file = _settings_path(profile.path)
+    with open(settings_file, 'w') as f:
+        json.dump(settings.model_dump(), f, indent=2)
 
 
 def get_user_profile_path(profile_name: str) -> Path:

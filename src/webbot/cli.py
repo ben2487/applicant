@@ -15,6 +15,7 @@ from .apply_finder import (
 from .ai_search import get_openai_client, OpenAIConfigError
 from .agents.find_apply_page import smart_find_apply_url
 from .struct_extract import parse_job_page, AIMode, JobPostingExtract
+from .google_drive import google_drive_login, refresh_resumes
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -71,7 +72,12 @@ def list_user_profiles() -> None:
     for p in profs:
         typer.echo(f"- name: {p.name}")
         typer.echo(f"  path: {p.path}")
-        typer.echo(f"  has_google_drive: {p.secrets.google_drive_credentials is not None}")
+        # Secrets are sensitive; only show whether linked
+        from .user_profiles import load_user_settings
+        settings = load_user_settings(p)
+        gd_user = p.secrets.google_drive_user or "(not linked)"
+        typer.echo(f"  google_drive: {gd_user}")
+        typer.echo(f"  name: {settings.human_name}")
         typer.echo("")
 
 
@@ -141,6 +147,34 @@ def _resolve_user_profile(name: str) -> UserProfile:
             typer.echo(f"❌ Failed to create user profile: {e}")
             raise typer.Exit(code=1)
     return p
+
+
+@app.command("google-drive-login")
+def google_drive_login_cmd(
+    user_profile: str = typer.Argument(..., help="User profile name to link to Google Drive"),
+):
+    """Interactive Google Drive login and link to the specified user profile."""
+    profile = _resolve_user_profile(user_profile)
+    try:
+        google_drive_login(profile)
+        typer.echo("✅ Google Drive linked successfully!")
+    except Exception as e:
+        typer.echo(f"❌ Google Drive login failed: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def sync_resumes(
+    user_profile: str = typer.Argument(..., help="User profile name to sync resumes for"),
+):
+    """Sync resumes from Google Drive to the local user profile directory."""
+    profile = _resolve_user_profile(user_profile)
+    try:
+        refresh_resumes(profile)
+        typer.echo("✅ Resumes synced successfully!")
+    except Exception as e:
+        typer.echo(f"❌ Resume sync failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @app.command()
