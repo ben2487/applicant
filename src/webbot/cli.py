@@ -215,8 +215,13 @@ def sync_resumes(
     """Sync resumes from Google Drive to the local user profile directory."""
     profile = _resolve_user_profile(user_profile)
     try:
-        refresh_resumes(profile)
-        typer.echo("✅ Resumes synced successfully!")
+        count = refresh_resumes(profile)
+        if count > 0:
+            typer.echo(f"✅ Resumes synced successfully! ({count} found)")
+        else:
+            typer.echo("⚠️  No matching resumes found.")
+            typer.echo("   Tip: Update google_drive_resume_path in settings.json, e.g., 'J/Resumes'.")
+            typer.echo("   We searched globally for [AP]* resumes containing 'Resume' and your human name.")
     except Exception as e:
         typer.echo(f"❌ Resume sync failed: {e}")
         raise typer.Exit(code=1)

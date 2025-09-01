@@ -193,28 +193,51 @@ def _write_json(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def refresh_resumes(profile: UserProfile) -> None:
+def refresh_resumes(profile: UserProfile) -> int:
     """Sync resumes from Google Drive to local user profile directory.
 
-    - Reads settings.json for human_name and google_drive_resume_path
-    - Lists Google Docs in the folder matching [AP]* and containing 'Resume' and human_name
-    - Prints found items + modified date
-    - Maintains resumes.json with modification times
-    - Downloads PDF and TXT for new/updated items into [profile]/resume_pdf/<base>/
-    - Removes local copies for items no longer present
+    Returns the number of matched resumes processed. Also updates the local
+    resumes.json index and removes stale local copies.
+
+    Strategy:
+    - Read settings.json for human_name and google_drive_resume_path
+    - Try to resolve the folder by path and list Google Docs in that folder
+    - If the folder isn't found, fall back to a global Drive search
+    - Filter for names starting with "[AP]", containing "Resume" and the human name (case-insensitive)
+    - Download updated/new items to [profile]/resume_pdf/<base>/ as resume.pdf + resume.txt
+    - Remove local copies for items no longer present
     """
     service = _drive_service_from_secrets(profile)
     settings = load_user_settings(profile)
     human_name = settings.human_name
     resume_path = settings.google_drive_resume_path
 
-    # Resolve the folder by path components
-    # This is a simple resolver that walks by name.
+    def list_docs_in_folder(folder_id: str) -> list[dict]:
+        query = (
+            f"'{folder_id}' in parents and "
+            "mimeType = 'application/vnd.google-apps.document' and trashed = false"
+        )
+        fields = "files(id,name,modifiedTime)"
+        res = service.files().list(q=query, fields=fields, orderBy="modifiedTime desc").execute()
+        return res.get("files", [])
+
+    def list_docs_global() -> list[dict]:
+        # Narrow with contains filters; final filtering done in Python for safety
+        q = (
+            "mimeType = 'application/vnd.google-apps.document' and "
+            "trashed = false and "
+            "name contains 'Resume'"
+        )
+        fields = "files(id,name,modifiedTime)"
+        res = service.files().list(q=q, fields=fields, orderBy="modifiedTime desc").execute()
+        return res.get("files", [])
+
+    # Resolve the folder by path components; if missing, fallback to global search
+    items: list[dict] = []
     def find_folder_id_by_path(path_str: str) -> Optional[str]:
         parts = [p for p in path_str.split("/") if p and p != "."]
         parent_id = None
-        for idx, part in enumerate(parts):
-            # Query folders matching name under given parent
+        for part in parts:
             q = ["mimeType = 'application/vnd.google-apps.folder'", f"name = '{part}'"]
             if parent_id:
                 q.append(f"'{parent_id}' in parents")
@@ -222,23 +245,15 @@ def refresh_resumes(profile: UserProfile) -> None:
             files = res.get("files", [])
             if not files:
                 return None
-            # Pick the first matching name
             parent_id = files[0]["id"]
         return parent_id
 
     folder_id = find_folder_id_by_path(resume_path)
-    if not folder_id:
-        print(f"❌ Resume folder not found: {resume_path}")
-        return
-
-    # List Google Docs in folder matching our criteria
-    query = (
-        f"'{folder_id}' in parents and "
-        "mimeType = 'application/vnd.google-apps.document'"
-    )
-    fields = "files(id,name,modifiedTime)"
-    res = service.files().list(q=query, fields=fields, orderBy="modifiedTime desc").execute()
-    items = res.get("files", [])
+    if folder_id:
+        items = list_docs_in_folder(folder_id)
+    else:
+        print(f"❌ Resume folder not found: {resume_path}. Falling back to a global search...")
+        items = list_docs_global()
 
     # Filters
     def matches(name: str) -> bool:
@@ -247,7 +262,7 @@ def refresh_resumes(profile: UserProfile) -> None:
         hay = name.lower()
         return ("resume" in hay) and (human_name.lower() in hay)
 
-    matched = [f for f in items if matches(f.get("name", ""))]
+    matched = [f for f in items if matches((f.get("name") or ""))]
 
     # Print found resumes
     for f in matched:
@@ -299,7 +314,6 @@ def refresh_resumes(profile: UserProfile) -> None:
         prev = old_by_id.get(rid)
         if prev:
             try:
-                # Remove the directory for that resume
                 prev_base = prev.get("base_name") or prev.get("name") or ""
                 dir_path = base_out_dir / prev_base
                 if dir_path.exists():
@@ -310,3 +324,4 @@ def refresh_resumes(profile: UserProfile) -> None:
                 pass
 
     _write_json(index_path, updated_index)
+    return len(matched)
