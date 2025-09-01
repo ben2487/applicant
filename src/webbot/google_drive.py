@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import json
 import re
-import time
+import os
 
 from .user_profiles import (
     UserProfile,
@@ -19,7 +19,55 @@ from .user_profiles import (
 class GoogleDriveNotLinkedError(RuntimeError): ...
 
 
-def google_drive_login(profile: UserProfile) -> None:
+def _discover_client_secret_path(profile: UserProfile, client_secret_path: Optional[Path]) -> tuple[Optional[Path], Optional[dict]]:
+    """Find a Google OAuth client configuration.
+
+    Returns a tuple of (path, inline_json_dict). If inline_json_dict is not None, use it with
+    InstalledAppFlow.from_client_config. If path is not None, use from_client_secrets_file.
+    Search order:
+    - explicit client_secret_path if provided
+    - env GOOGLE_OAUTH_CLIENT_FILE
+    - env GOOGLE_OAUTH_CLIENT_JSON (inline JSON)
+    - user profile dir: <profile>/client_secret.json
+    - project root: <repo>/client_secret.json
+    - user config dir: ~/.config/webbot/client_secret.json
+    """
+    # 1) explicit
+    if client_secret_path:
+        p = Path(client_secret_path)
+        if p.exists():
+            return p, None
+    # 2) env file
+    env_file = os.environ.get("GOOGLE_OAUTH_CLIENT_FILE")
+    if env_file:
+        p = Path(env_file).expanduser()
+        if p.exists():
+            return p, None
+    # 3) env inline json
+    env_json = os.environ.get("GOOGLE_OAUTH_CLIENT_JSON")
+    if env_json:
+        try:
+            data = json.loads(env_json)
+            return None, data
+        except Exception:
+            pass
+    # 4) profile dir
+    prof_path = profile.path / "client_secret.json"
+    if prof_path.exists():
+        return prof_path, None
+    # 5) repo root (parent of src)
+    repo_root = Path(__file__).parent.parent.parent
+    root_path = repo_root / "client_secret.json"
+    if root_path.exists():
+        return root_path, None
+    # 6) ~/.config/webbot
+    cfg_path = Path.home() / ".config/webbot/client_secret.json"
+    if cfg_path.exists():
+        return cfg_path, None
+    return None, None
+
+
+def google_drive_login(profile: UserProfile, client_secret_path: Optional[Path] = None) -> None:
     """Interactive login linking Google Drive to the given user profile.
 
     Stores credentials and google account identity (email) in secrets.json.
@@ -41,18 +89,20 @@ def google_drive_login(profile: UserProfile) -> None:
         "https://www.googleapis.com/auth/drive.readonly",
     ]
 
-    # Expect a credentials file client_secret.json in the profile dir if using OAuth client
-    # Alternatively, we can store previously saved token in secrets.json
-    client_secret_path = profile.path / "client_secret.json"
-
-    creds: Optional[Credentials] = None
-    # Perform an OAuth local flow
-    if not client_secret_path.exists():
+    # Discover client config
+    secret_file, inline_config = _discover_client_secret_path(profile, client_secret_path)
+    if not secret_file and not inline_config:
         raise RuntimeError(
-            f"Missing OAuth client file: {client_secret_path}. Place your Google OAuth client JSON here."
+            "No Google OAuth client credentials found. Provide with --client-secret, "
+            "or set GOOGLE_OAUTH_CLIENT_FILE / GOOGLE_OAUTH_CLIENT_JSON, or place client_secret.json "
+            "in the user profile dir, repo root, or ~/.config/webbot/."
         )
 
-    flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_path), SCOPES)
+    if inline_config is not None:
+        flow = InstalledAppFlow.from_client_config(inline_config, SCOPES)
+    else:
+        flow = InstalledAppFlow.from_client_secrets_file(str(secret_file), SCOPES)
+
     creds = flow.run_local_server(port=0)
 
     # Build drive service to fetch user info

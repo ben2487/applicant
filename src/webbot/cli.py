@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import typer
 from typing import Optional
+from pathlib import Path
 from .browser_profiles import discover_browser_profiles, find_browser_profile_by_name_or_dir, BrowserProfile
 from .user_profiles import discover_user_profiles, find_user_profile_by_name, UserProfile
 from .browser import smart_launch_with_profile, goto_and_wait
@@ -152,11 +153,16 @@ def _resolve_user_profile(name: str) -> UserProfile:
 @app.command("google-drive-login")
 def google_drive_login_cmd(
     user_profile: str = typer.Argument(..., help="User profile name to link to Google Drive"),
+    client_secret: Optional[Path] = typer.Option(
+        None,
+        "--client-secret",
+        help="Path to Google OAuth client JSON. If omitted, env vars and common paths are tried.",
+    ),
 ):
     """Interactive Google Drive login and link to the specified user profile."""
     profile = _resolve_user_profile(user_profile)
     try:
-        google_drive_login(profile)
+        google_drive_login(profile, client_secret_path=client_secret)
         typer.echo("✅ Google Drive linked successfully!")
     except Exception as e:
         typer.echo(f"❌ Google Drive login failed: {e}")
