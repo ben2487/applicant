@@ -1,6 +1,6 @@
 from __future__ import annotations
 from playwright.async_api import async_playwright, BrowserContext, Page
-from .profiles import ChromeProfile
+from .browser_profiles import BrowserProfile
 import asyncio
 
 
@@ -32,7 +32,7 @@ async def try_attach_to_existing_chrome() -> tuple[BrowserContext, Page] | None:
 
 
 async def smart_launch_with_profile(
-    profile: ChromeProfile, *, headless: bool = False
+    profile: BrowserProfile, *, headless: bool = False
 ) -> tuple[BrowserContext, Page]:
     """
     Intelligently launch Chrome: attach to existing instance if possible, 
@@ -68,7 +68,7 @@ async def smart_launch_with_profile(
 
 
 async def launch_with_profile(
-    profile: ChromeProfile, *, headless: bool = False
+    profile: BrowserProfile, *, headless: bool = False
 ) -> tuple[BrowserContext, Page]:
     # Using Chrome channel + persistent context. user_data_dir is the *root*; profile chosen via arg.
     if not profile.user_data_root.exists():

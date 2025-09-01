@@ -1,4 +1,4 @@
-.PHONY: setup test lint fmt run list test-ai help
+.PHONY: setup test lint fmt run list list-browser list-user test-ai help
 
 # Default target
 help:
@@ -7,9 +7,10 @@ help:
 	@echo "  test           - Run tests"
 	@echo "  lint           - Run linting with ruff"
 	@echo "  fmt            - Format code with ruff and black"
-	@echo "  list           - List Chrome browser profiles"
-	@echo "  run            - Run automation (auto-attaches to existing Chrome or launches new)"
-	@echo "  test-ai        - Test OpenAI API key with GPT-5o-mini"
+	@echo "  list-browser   - List Chrome browser profiles"
+	@echo "  list-user      - List user profiles"
+	@echo "  run            - Run automation with structured extraction & agentic AI"
+	@echo "  test-ai        - Test OpenAI API key with GPT-4o-mini"
 	@echo "  help           - Show this help message"
 
 # Install dependencies and Playwright browsers
@@ -30,17 +31,25 @@ fmt:
 	poetry run ruff check --fix .
 	poetry run black .
 
-# List Chrome profiles
-list:
+# List Chrome browser profiles
+list-browser:
 	cd src && poetry run python -m webbot.cli list-browser-profiles
+
+# List user profiles
+list-user:
+	cd src && poetry run python -m webbot.cli list-user-profiles
 
 # Test OpenAI API key
 test-ai:
 	cd src && poetry run python -m webbot.cli test-openai-key
 
-# Run example automation
+# Run example automation with structured extraction and agentic AI
 run:
-	cd src && poetry run python -m webbot.cli run --use-browser-profile "Default" --initial-job-url "https://www.workatastartup.com/jobs/74132"
+	cd src && poetry run python -m webbot.cli run "DefaultUser" --use-browser-profile "Default" --initial-job-url "https://www.workatastartup.com/jobs/74132" --ai-mode openai
+
+# Run with heuristic extraction only (no OpenAI required)
+run-heuristic:
+	cd src && poetry run python -m webbot.cli run "DefaultUser" --use-browser-profile "Default" --initial-job-url "https://www.workatastartup.com/jobs/74132" --ai-mode llm_off
 
 # Clean up generated files
 clean:

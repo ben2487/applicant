@@ -1,0 +1,5 @@
+1. Logging of all LLM queries for subsequent text classifier training or evaluation/fine tuning of cheaper LLMs
+2. Should keep ability to gild labels as human verified correct
+
+3. Create a step-by-step HTML nested log of what's going on to debug things. The "https://www.workatastartup.com/jobs/74132 link went to a generic software engineer listing, not the backend listing referenced in the description. The only way to tell the difference was with the technologies listed.
+

@@ -7,7 +7,7 @@ import os
 
 
 @dataclass
-class ChromeProfile:
+class BrowserProfile:
     name: str  # "Person 1" / custom label
     dir_name: str  # "Default", "Profile 1", ...
     user_data_root: Path  # root dir that contains profile folders
@@ -31,8 +31,8 @@ def _candidate_roots() -> list[Path]:
     return [r for r in roots if r.exists()]
 
 
-def discover_profiles() -> list[ChromeProfile]:
-    found: list[ChromeProfile] = []
+def discover_browser_profiles() -> list[BrowserProfile]:
+    found: list[BrowserProfile] = []
     for root in _candidate_roots():
         local_state = root / "Local State"
         if not local_state.exists():
@@ -51,7 +51,7 @@ def discover_profiles() -> list[ChromeProfile]:
                 or meta.get("gaia_given_name")
                 or meta.get("gaia_email")
             )
-            prof = ChromeProfile(
+            prof = BrowserProfile(
                 name=name,
                 dir_name=dir_name,
                 user_data_root=root,
@@ -63,9 +63,9 @@ def discover_profiles() -> list[ChromeProfile]:
     return found
 
 
-def find_profile_by_name_or_dir(q: str) -> ChromeProfile | None:
+def find_browser_profile_by_name_or_dir(q: str) -> BrowserProfile | None:
     qnorm = q.strip().lower()
-    for p in discover_profiles():
+    for p in discover_browser_profiles():
         if p.dir_name.lower() == qnorm or p.name.lower() == qnorm:
             return p
     return None

@@ -1,14 +1,17 @@
-# WebBot - Browser Automation Starter
+# WebBot - Intelligent Job Application Assistant
 
-A Python browser automation starter project using Playwright, designed to help you quickly get started with web automation tasks including Chrome profile management and job application workflows.
+A Python browser automation tool using Playwright and OpenAI, designed to intelligently analyze job postings and find direct application URLs using agentic AI.
 
 ## Features
 
-- **Chrome Profile Management**: Discover and list Chrome profiles with human-readable names and email identifiers
-- **Persistent Browser Sessions**: Launch Chrome with existing profiles to reuse cookies and sessions
-- **Job Page Analysis**: Extract visible text from job pages and analyze content
-- **Smart Apply URL Discovery**: Use OpenAI-assisted search to find company careers/apply pages
+- **Chrome Profile Management**: Discover and list Chrome browser profiles with human-readable names and email identifiers
+- **User Profile System**: Manage user-specific data including secrets, job tracking, and resume cache
+- **Smart Browser Launch**: Automatically attach to existing Chrome instances or launch new ones with profiles
+- **Structured Job Analysis**: Extract job details including title, company, requirements, work mode, locations, and compensation
+- **Agentic AI Apply Discovery**: Use OpenAI function-calling to intelligently find official company apply URLs
+- **Dual Extraction Modes**: LLM-enhanced extraction (default) or fast heuristic-only mode
 - **Domain Filtering**: Maintain a do-not-apply domain list for job aggregation sites
+- **Comparison Output**: Compare agentic AI vs. legacy heuristic approaches
 - **CLI Interface**: Easy-to-use Typer-based command line interface
 - **Testing**: Comprehensive test suite with pytest
 
@@ -18,7 +21,7 @@ A Python browser automation starter project using Playwright, designed to help y
 - Poetry (for dependency management)
 - Chrome browser installed
 - Playwright browsers
-- OpenAI API key (optional, for enhanced search)
+- OpenAI API key (for AI-enhanced features)
 
 ## Quick Start
 
@@ -39,26 +42,54 @@ brew install poetry
 make setup
 ```
 
-### 3. List Chrome Profiles
+### 3. Configure OpenAI (Optional)
 
 ```bash
-# List all available Chrome profiles
-make list
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env and add your OpenAI API key
+echo "OPENAI_API_KEY=sk-your-key-here" >> .env
+```
+
+### 4. List Available Profiles
+
+```bash
+# List Chrome browser profiles
+make list-browser
+
+# List user profiles (will be empty initially)
+make list-user
 
 # Or run directly
 poetry run python -m webbot.cli list-browser-profiles
+poetry run python -m webbot.cli list-user-profiles
 ```
 
-### 4. Run Automation
+### 5. Test OpenAI Integration
 
 ```bash
-# Open Chrome with Default profile and visit a job page
+# Test your OpenAI API key
+make test-ai
+
+# Or run directly
+poetry run python -m webbot.cli test-openai-key
+```
+
+### 6. Run Intelligent Job Analysis
+
+```bash
+# Run with AI-enhanced extraction (default)
 make run
 
-# Or customize the profile and URL
-poetry run python -m webbot.cli run \
-  --use-browser-profile "Profile 1" \
-  --initial-job-url "https://example.com/jobs/123"
+# Run with heuristic extraction only (no OpenAI required)
+make run-heuristic
+
+# Or customize the profiles and URL
+poetry run python -m webbot.cli run "MyUserProfile" \
+  --use-browser-profile "Work" \
+  --initial-job-url "https://example.com/jobs/123" \
+  --ai-mode openai
 ```
 
 ## Available Commands
@@ -67,8 +98,11 @@ poetry run python -m webbot.cli run \
 make help           # Show available commands
 make setup          # Install dependencies and Playwright browsers
 make test           # Run tests
-make list           # List Chrome browser profiles
-make run            # Run example automation
+make list-browser   # List Chrome browser profiles
+make list-user      # List user profiles
+make test-ai        # Test OpenAI API key
+make run            # Run with AI-enhanced extraction
+make run-heuristic  # Run with heuristic extraction only
 make lint           # Run linting with ruff
 make fmt            # Format code with ruff and black
 make clean          # Clean up generated files
@@ -80,15 +114,23 @@ make clean          # Clean up generated files
 applicant/
 ├── data/
 │   └── do-not-apply.txt      # Domains to exclude from job applications
+├── user_profiles/            # User-specific data (created automatically)
+│   └── [UserName]/
+│       └── secrets.json      # User secrets (Google Drive, etc.)
 ├── src/
 │   └── webbot/
 │       ├── __init__.py        # Package initialization
 │       ├── cli.py             # Command line interface
-│       ├── profiles.py        # Chrome profile discovery
+│       ├── browser_profiles.py # Chrome browser profile discovery
+│       ├── user_profiles.py   # User profile management
 │       ├── browser.py         # Browser launch and management
 │       ├── extract.py         # Text extraction utilities
-│       ├── apply_finder.py    # Apply URL discovery logic
-│       ├── ai_search.py       # OpenAI-assisted search
+│       ├── struct_extract.py  # Structured job data extraction
+│       ├── apply_finder.py    # Legacy apply URL discovery
+│       ├── ai_search.py       # OpenAI client and search utilities
+│       ├── agents/
+│       │   ├── __init__.py    # Agents package
+│       │   └── find_apply_page.py  # Agentic apply URL discovery
 │       └── config.py          # Configuration and environment
 ├── tests/
 │   ├── test_profiles.py       # Profile discovery tests
@@ -99,186 +141,201 @@ applicant/
 └── README.md                  # This file
 ```
 
+## Profile System
+
+WebBot uses two distinct profile systems:
+
+### Browser Profiles
+Chrome browser profiles that contain cookies, sessions, and browser settings:
+- Discovered automatically from Chrome installation
+- Used for browser automation and session management
+- Optional: `--use-browser-profile "ProfileName"`
+
+### User Profiles
+Local directories containing user-specific data:
+- Created automatically when first used
+- Contains secrets, job tracking, resume cache
+- **Required**: `USER_PROFILE` argument
+
 ## Usage Examples
 
-### List Chrome Profiles
+### List Available Profiles
 
 ```bash
+# List Chrome browser profiles
 poetry run python -m webbot.cli list-browser-profiles
 ```
 
 Output:
 ```
-- name: Person 1
+- name: Default
   dir_name: Default  (default)
   path: /Users/user/Library/Application Support/Google/Chrome/Default
   email: user@example.com
 
-- name: Work Profile
+- name: Work
   dir_name: Profile 1
   path: /Users/user/Library/Application Support/Google/Chrome/Profile 1
   email: work@company.com
 ```
 
-### Open Browser with Profile
+```bash
+# List user profiles
+poetry run python -m webbot.cli list-user-profiles
+```
+
+Output:
+```
+- name: JohnDoe
+  path: user_profiles/JohnDoe
+  has_google_drive: True
+
+- name: WorkAccount
+  path: user_profiles/WorkAccount
+  has_google_drive: False
+```
+
+### Analyze a Job Posting with AI
 
 ```bash
-# Use default profile
-poetry run python -m webbot.cli run
-
-# Use specific profile
-poetry run python -m webbot.cli run --use-browser-profile "Profile 1"
-
-# Visit a job page and analyze
-poetry run python -m webbot.cli run \
-  --use-browser-profile "Default" \
-  --initial-job-url "https://www.workatastartup.com/jobs/74132"
+poetry run python -m webbot.cli run "JohnDoe" \
+  --use-browser-profile "Work" \
+  --initial-job-url "https://www.workatastartup.com/jobs/74132" \
+  --ai-mode openai
 ```
 
-### Domain Filtering
+This will:
+1. Create user profile "JohnDoe" if it doesn't exist
+2. Launch Chrome with the "Work" browser profile (or attach to existing instance)
+3. Navigate to the job URL
+4. Extract and display structured job data:
+   - Job title and company name
+   - Work mode (remote/hybrid/in-office)
+   - Locations and requirements
+   - Compensation currencies and non-US indicators
+5. Use agentic AI to find the official company apply URL
+6. Compare with legacy heuristic approach
+7. Display colored LLM prompts and responses
 
-Add domains to exclude from job applications in `data/do-not-apply.txt`:
+### Run with Heuristic Extraction Only
 
+```bash
+poetry run python -m webbot.cli run "TestUser" \
+  --initial-job-url "https://example.com/jobs/123" \
+  --ai-mode llm_off
 ```
-# One domain per line; subdomains will match implicitly.
-workatastartup.com
-angel.co
-```
 
-When a job page from these domains is visited, the tool will:
-1. Extract the page text
-2. Search for the company's own careers/apply page
-3. Present the best "applyable" URL
+This runs without requiring OpenAI API key, using only fast heuristic extraction.
 
 ## Configuration
 
-### OpenAI Integration
+### OpenAI API Key
 
-To enable OpenAI-assisted search for company careers pages:
+Create a `.env` file in the project root:
 
-1. Copy `.env.example` to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+# Copy the example
+cp .env.example .env
 
-2. Add your OpenAI API key:
-   ```
-   OPENAI_API_KEY=sk-your-api-key-here
-   ```
+# Edit .env and add your key
+OPENAI_API_KEY=sk-your-openai-api-key-here
+```
 
-3. The tool will automatically use AI to generate better search queries when finding apply URLs.
+### User Profile Secrets
 
-### Chrome Profile Selection
+User profiles automatically create a `secrets.json` file for storing credentials:
 
-The tool automatically discovers Chrome profiles from standard locations:
-- **macOS**: `~/Library/Application Support/Google/Chrome`
-- **Windows**: `%LOCALAPPDATA%\Google\Chrome\User Data`
-- **Linux**: `~/.config/google-chrome` or `~/.config/chromium`
+```json
+{
+  "google_drive_credentials": {
+    "client_id": "your-client-id",
+    "client_secret": "your-client-secret",
+    "refresh_token": "your-refresh-token"
+  }
+}
+```
+
+### Do-Not-Apply Domains
+
+Edit `data/do-not-apply.txt` to add domains where you don't want to apply directly:
+
+```
+# One domain per line; subdomains will match implicitly
+workatastartup.com
+angel.co
+indeed.com
+```
 
 ## Testing
 
-Run the test suite:
-
 ```bash
+# Run all tests
 make test
-```
 
-Run specific test categories:
-
-```bash
-# All tests
-poetry run pytest
-
-# Specific test file
+# Run specific test file
 poetry run pytest tests/test_profiles.py
+
+# Run with verbose output
+poetry run pytest -v
 ```
+
+## Troubleshooting
+
+### Chrome Profile Issues
+
+- **No profiles found**: Make sure Chrome has been launched at least once
+- **Profile in use**: Close other Chrome instances or use a different profile
+- **Permission errors**: Check Chrome profile directory permissions
+
+### User Profile Issues
+
+- **Profile not found**: User profiles are created automatically when first used
+- **Permission errors**: Check write permissions in the project directory
+- **Corrupted secrets**: Delete the `secrets.json` file to reset
+
+### OpenAI Issues
+
+- **Missing API key**: Set `OPENAI_API_KEY` in your `.env` file
+- **Invalid API key**: Verify your key is correct and has billing enabled
+- **Rate limits**: The tool uses GPT-4o-mini which has generous rate limits
+
+### Browser Launch Issues
+
+- **Chrome not found**: Install Chrome browser
+- **Playwright browsers**: Run `make setup` to install Playwright browsers
+- **Port conflicts**: The tool automatically handles port conflicts by attaching to existing instances
 
 ## Development
 
 ### Code Quality
 
 ```bash
-# Check code quality
+# Format code
+make fmt
+
+# Run linting
 make lint
 
-# Auto-format code
-make fmt
+# Run tests
+make test
 ```
 
-### Adding New Features
+### Adding New Agents
 
-1. **New CLI Commands**: Add to `src/webbot/cli.py`
-2. **Profile Enhancements**: Extend `src/webbot/profiles.py`
-3. **Browser Features**: Add to `src/webbot/browser.py`
-4. **Search Logic**: Enhance `src/webbot/apply_finder.py`
+The `agents/` directory is designed for future LLM-guided agents:
 
-## Troubleshooting
+1. Create a new file in `src/webbot/agents/`
+2. Implement your agent logic
+3. Import and use in `cli.py`
 
-### Common Issues
+### Extending User Profiles
 
-#### Chrome Profile Not Found
+User profiles are designed to be extensible:
 
-```bash
-# Make sure Chrome has been launched at least once
-# Check if profiles exist
-make list
-```
+1. Add new fields to `UserSecrets` in `user_profiles.py`
+2. Create new data files in the user profile directory
+3. Implement profile-specific functionality
 
-#### Browser Launch Fails
+### Extending Structured Extraction
 
-If Chrome is already running with the selected profile:
-1. Close all Chrome windows
-2. Try again with `make run`
-
-#### OpenAI API Errors
-
-```bash
-# Check your API key
-cat .env
-
-# Verify the key is valid
-poetry run python -c "from webbot.ai_search import get_openai_client; get_openai_client()"
-```
-
-#### Permission Issues
-
-On macOS, grant accessibility permissions to Terminal/VS Code:
-- System Preferences > Security & Privacy > Privacy > Accessibility
-
-### Debug Mode
-
-For debugging, you can run individual components:
-
-```python
-# Test profile discovery
-from webbot.profiles import discover_profiles
-profiles = discover_profiles()
-print(profiles)
-
-# Test browser launch
-from webbot.browser import launch_with_profile
-# ... browser automation code
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass: `make test`
-6. Format your code: `make fmt`
-7. Submit a pull request
-
-## License
-
-This project is open source and available under the [MIT License](LICENSE).
-
-## Support
-
-If you encounter issues:
-
-1. Check the troubleshooting section above
-2. Search existing issues on GitHub
-3. Create a new issue with detailed information about your problem
-4. Include your operating system, Chrome version, and any error messages
+Modify `struct_extract.py` to add new fields to the `JobPostingExtract` model and corresponding extraction logic.
