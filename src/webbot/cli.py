@@ -4,7 +4,14 @@ import typer
 from typing import Optional
 from pathlib import Path
 from .browser_profiles import discover_browser_profiles, find_browser_profile_by_name_or_dir, BrowserProfile
-from .user_profiles import discover_user_profiles, find_user_profile_by_name, UserProfile
+from .user_profiles import (
+    discover_user_profiles,
+    find_user_profile_by_name,
+    UserProfile,
+    create_user_profile,
+    load_user_settings,
+    save_user_settings,
+)
 from .browser import smart_launch_with_profile, goto_and_wait
 from .extract import extract_visible_text
 from .apply_finder import (
@@ -74,12 +81,44 @@ def list_user_profiles() -> None:
         typer.echo(f"- name: {p.name}")
         typer.echo(f"  path: {p.path}")
         # Secrets are sensitive; only show whether linked
-        from .user_profiles import load_user_settings
         settings = load_user_settings(p)
         gd_user = p.secrets.google_drive_user or "(not linked)"
         typer.echo(f"  google_drive: {gd_user}")
         typer.echo(f"  name: {settings.human_name}")
         typer.echo("")
+
+
+@app.command()
+def list_users() -> None:
+    """List user profile names available."""
+    profs = discover_user_profiles()
+    if not profs:
+        typer.echo("No user profiles found.")
+        raise typer.Exit(code=0)
+    for p in profs:
+        settings = load_user_settings(p)
+        gd_user = p.secrets.google_drive_user or "(not linked)"
+        typer.echo(f"- {p.name}  |  human: {settings.human_name}  |  google: {gd_user}")
+
+
+@app.command()
+def create_user(
+    user_profile: str = typer.Argument(..., help="New user profile folder name"),
+):
+    """Create a new user profile and prompt for human name."""
+    try:
+        p = create_user_profile(user_profile)
+    except ValueError as e:
+        typer.echo(str(e))
+        raise typer.Exit(code=2)
+
+    # Prompt for human name
+    human = typer.prompt("Enter human name", default="Ben Mowery")
+    settings = load_user_settings(p)
+    settings.human_name = human
+    save_user_settings(p, settings)
+
+    typer.echo(f"✅ Created user profile '{user_profile}' at {p.path}")
 
 
 @app.command()
