@@ -24,8 +24,49 @@ from .ai_search import get_openai_client, OpenAIConfigError
 from .agents.find_apply_page import smart_find_apply_url
 from .struct_extract import parse_job_page, AIMode, JobPostingExtract
 from .google_drive import google_drive_login, refresh_resumes
+from .resume_alignment import run_alignment_for_files
+from .config import repo_root
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+
+@app.callback(invoke_without_command=True)
+def _root(
+    test_resume_selection: bool = typer.Option(
+        False,
+        "--test-resume-selection",
+        help=(
+            "Run a local resume alignment test using user 'user_ben' and "
+            "data/test_job_desc1.txt with a strong OpenAI model."
+        ),
+    ),
+) -> None:
+    if test_resume_selection:
+        profile = _resolve_user_profile("user_ben")
+        job_path = repo_root() / "data/test_job_desc1.txt"
+        try:
+            result, trace = run_alignment_for_files(
+                profile=profile, job_desc_path=job_path, model="gpt-4o"
+            )
+
+            typer.echo("\n" + "🔵" * 20 + " RESUME ALIGNMENT PROMPT " + "🔵" * 20)
+            typer.echo(trace["prompt"])
+            typer.echo("\n" + "🟢" * 20 + " RESUME ALIGNMENT RESPONSE " + "🟢" * 20)
+            typer.echo(trace["response"])
+
+            typer.echo("\n" + "🟡" * 20 + " SELECTION SUMMARY " + "🟡" * 20)
+            typer.echo(f"Chosen resume id:   {result.chosen_resume_id}")
+            typer.echo(f"Chosen resume name: {result.chosen_resume_name}")
+            typer.echo(f"Confidence:         {result.confidence_label}")
+            if result.missing_summary:
+                typer.echo(f"Missing summary:    {result.missing_summary}")
+            if result.reasoning:
+                typer.echo(f"Reasoning:          {result.reasoning}")
+        except Exception as e:
+            typer.echo(f"❌ Resume alignment test failed: {e}")
+            raise typer.Exit(code=1)
+
+        raise typer.Exit(code=0)
 
 
 def _pretty_print_extract(extract: JobPostingExtract) -> None:
