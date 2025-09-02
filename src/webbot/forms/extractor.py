@@ -84,7 +84,8 @@ async def _extract_fields_from_page(page: Page) -> List[FormField]:
         ftype = _guess_field_type(e.get("type"), e.get("tag"), e.get("role"))
         loc = Locator()
         if e.get("id"):
-            loc.css = f"#{e['id']}"
+            # Use attribute selector to avoid CSS id escaping issues
+            loc.css = f"[id=\"{e['id']}\"]"
         elif e.get("name"):
             loc.css = f"[name=\"{e['name']}\"]"
         else:

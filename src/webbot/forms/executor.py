@@ -95,11 +95,23 @@ async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionO
     if not sel:
         # Fallbacks by label/placeholder when CSS is missing
         label_txt = (field.label or "").strip()
+        placeholder_txt = (field.placeholder or "").strip()
         if label_txt:
             try:
                 loc = page.get_by_label(label_txt)
                 await loc.first.scroll_into_view_if_needed()
                 if field.type in {"text", "email", "tel", "number", "date", "textarea"}:
+                    print(f"[executor] [fallback-label] Filling: {label_txt} -> {value}")
+                    await loc.fill(value)
+                    return
+            except Exception:
+                pass
+        if placeholder_txt:
+            try:
+                loc = page.get_by_placeholder(placeholder_txt)
+                await loc.first.scroll_into_view_if_needed()
+                if field.type in {"text", "email", "tel", "number", "date", "textarea"}:
+                    print(f"[executor] [fallback-placeholder] Filling: {placeholder_txt} -> {value}")
                     await loc.fill(value)
                     return
             except Exception:
@@ -113,23 +125,38 @@ async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionO
             pass
         await _scroll_into_view(page, sel, opts.scroll_padding)
         loc = page.locator(sel)
-        if await loc.count() == 0:
+        cnt = await loc.count()
+        if cnt == 0:
             # Fallback by label
             label_txt = (field.label or "").strip()
+            placeholder_txt = (field.placeholder or "").strip()
             if label_txt:
                 try:
                     loc = page.get_by_label(label_txt)
+                    cnt = await loc.count()
                 except Exception:
                     pass
+            if cnt == 0 and placeholder_txt:
+                try:
+                    loc = page.get_by_placeholder(placeholder_txt)
+                    cnt = await loc.count()
+                except Exception:
+                    pass
+        if cnt == 0:
+            print(f"[executor] [fill] No element found for selector '{sel}' label='{field.label}' placeholder='{field.placeholder}'")
+            return
         if field.type in {"text", "email", "tel", "number", "date"}:
-            await loc.fill(value)
+            print(f"[executor] [fill] Using selector '{sel}' -> {value}")
+            await loc.first.fill(value)
         elif field.type == "textarea":
-            await loc.fill(value)
+            print(f"[executor] [fill] Using selector (textarea) '{sel}' -> {value}")
+            await loc.first.fill(value)
         elif field.type == "select":
             try:
-                await loc.select_option(value)
+                print(f"[executor] [select] '{sel}' -> {value}")
+                await loc.first.select_option(value)
             except Exception:
-                await loc.click()
+                await loc.first.click()
         elif field.type == "checkbox":
             target_truthy = value.lower() in {"1", "true", "yes", "on"}
             if not target_truthy:
@@ -173,16 +200,16 @@ async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionO
                     pass
             # Fallback: if it's a real input, ensure checked state
             try:
-                current = await loc.is_checked()
+                current = await loc.first.is_checked()
                 if not current:
-                    await loc.check()
+                    await loc.first.check()
             except Exception:
                 return
         elif field.type == "radio":
-            await loc.click()
+            await loc.first.click()
         else:
             # attempt generic type
-            await loc.fill(value)
+            await loc.first.fill(value)
     except Exception:
         return
 
@@ -211,22 +238,37 @@ async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile
             if not sel:
                 print(f"[executor] No selector for field: {(f.label or f.name or f.field_id)}; trying label fallback")
             try:
-                loc = page.locator(sel) if sel else None
-                # prioritize existing value
-                existing = None
-                try:
-                    if loc:
-                        existing = await loc.input_value()
-                except Exception:
-                    pass
-                if existing and existing.strip():
-                    print(f"[executor] Skipping pre-populated field: {(f.label or f.name or f.field_id)}")
+                # Determine pre-populated differently by type
+                prepopulated = False
+                if f.type in {"text", "email", "tel", "number", "date", "textarea"}:
+                    if sel:
+                        loc = page.locator(sel)
+                        if await loc.count() > 0:
+                            try:
+                                val = await loc.first.input_value()
+                                prepopulated = bool(val and val.strip())
+                                if prepopulated:
+                                    print(f"[executor] Skipping pre-populated text: {(f.label or f.name or f.field_id)} -> '{val}'")
+                            except Exception:
+                                prepopulated = False
+                elif f.type in {"checkbox", "radio"}:
+                    if sel:
+                        loc = page.locator(sel)
+                        if await loc.count() > 0:
+                            try:
+                                state = await loc.first.is_checked()
+                                prepopulated = bool(state)
+                                if prepopulated:
+                                    print(f"[executor] Skipping pre-checked: {(f.label or f.name or f.field_id)}")
+                            except Exception:
+                                prepopulated = False
+                if prepopulated:
                     continue
-                if field.type in {"text", "email", "tel", "number", "date", "textarea"}:
+                if f.type in {"text", "email", "tel", "number", "date", "textarea"}:
                     print(f"[executor] Filling {field.type}: {(f.label or f.name or f.field_id)} -> {answer}")
                 await _fill_field(page, f, str(answer), opts)
-            except Exception:
-                print(f"[executor] Failed to fill field: {(f.label or f.name or f.field_id)}")
+            except Exception as e:
+                print(f"[executor] Failed to fill field: {(f.label or f.name or f.field_id)} | error={e}")
                 continue
 
     # 3) Leave browser open for manual review
