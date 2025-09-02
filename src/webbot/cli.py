@@ -29,7 +29,7 @@ from .ai_search import get_openai_client, OpenAIConfigError
 from .agents.find_apply_page import smart_find_apply_url
 from .struct_extract import parse_job_page, AIMode, JobPostingExtract
 from .google_drive import google_drive_login, refresh_resumes
-from .resume_alignment import run_alignment_for_files
+from .resume_alignment import run_alignment_for_files, select_best_resume_for_job_description
 from .config import repo_root
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -428,6 +428,218 @@ def run(
 
     asyncio.run(main())
 
+
+@app.command("apply-flow")
+def apply_flow(
+    initial_job_url: str = typer.Argument(..., help="Starting URL (job post or company page)"),
+    user_profile: str = typer.Option("user_ben", "--user-profile", help="User profile for resumes and settings"),
+    use_browser_profile: Optional[str] = typer.Option(
+        None,
+        "--use-browser-profile",
+        help="Chrome browser profile name or dir (e.g., 'Default', 'Profile 1').",
+    ),
+    headless: bool = typer.Option(False, "--headless/--no-headless", help="Run in headless mode"),
+    ignore_optional: bool = typer.Option(True, "--ignore-optional/--no-ignore-optional"),
+    model: str = typer.Option("gpt-4o", "--model", help="Model for answer generation and resume selection"),
+    hold_seconds: int = typer.Option(45, "--hold-seconds", help="Seconds to keep browser open for manual review"),
+):
+    """
+    End-to-end application flow in one command:
+    1) Launch/attach Chrome with selected browser profile
+    2) Open the starting URL and extract job context
+    3) Find an applyable URL (Agentic AI + legacy DuckDuckGo comparison)
+    4) Navigate to the application form (or click Apply heuristically)
+    5) Extract form schema, select best resume, generate LLM answers
+    6) Fill the form and upload resume (no submit)
+    """
+
+    browser_profile = _resolve_browser_profile(use_browser_profile)
+    user_profile_obj = _resolve_user_profile(user_profile)
+
+    async def _heuristic_click_apply(page):
+        import re as _re
+        # Try role=button/link with accessible name containing 'apply'
+        for role in ("button", "link"):
+            try:
+                loc = page.get_by_role(role, name=_re.compile(r"apply|submit application", _re.I))
+                if await loc.count() > 0:
+                    await loc.first.scroll_into_view_if_needed()
+                    await loc.first.click()
+                    return True
+            except Exception:
+                pass
+        # Fallback: visible text
+        try:
+            loc = page.locator(":text-matches('^\\s*(Apply|Apply now|Apply for this job|Submit application)\\b', 'i')")
+            if await loc.count() > 0:
+                await loc.first.scroll_into_view_if_needed()
+                await loc.first.click()
+                return True
+        except Exception:
+            pass
+        return False
+
+    async def main():
+        ctx, page = await smart_launch_with_profile(browser_profile, headless=headless)
+        try:
+            await goto_and_wait(page, initial_job_url)
+            try:
+                await page.wait_for_load_state(state="networkidle", timeout=20000)
+            except Exception:
+                pass
+
+            # Extract job context from live DOM
+            try:
+                initial_text = await extract_visible_text(page)
+            except Exception:
+                initial_text = ""
+
+            # Structured extract for company/title
+            try:
+                extract = await parse_job_page(page, mode=AIMode.OPEN_AI)
+                _pretty_print_extract(extract)
+            except OpenAIConfigError:
+                extract = await parse_job_page(page, mode=AIMode.LLM_OFF)
+                _pretty_print_extract(extract)
+            except Exception:
+                extract = None
+
+            company_name = (extract.company_name if extract else None) or "Unknown Company"
+            job_title = (extract.title if extract else None) or (await page.title() or "Unknown Role")
+
+            # Find apply URL using both methods (agentic vs legacy) and compare
+            agentic_url = None
+            legacy_url = None
+            try:
+                typer.echo("\n🤖 Using agentic AI approach to find apply URL...")
+                agentic_url, agentic_trace = await smart_find_apply_url(page, company_name=company_name, job_title=job_title)
+                typer.echo("\n" + "🔵"*20 + " AGENTIC AI PROMPT " + "🔵"*20)
+                typer.echo(agentic_trace.get("prompt") or "")
+                typer.echo("\n" + "🟢"*20 + " AGENTIC AI RESPONSE " + "🟢"*20)
+                typer.echo(agentic_trace.get("response") or "")
+                typer.echo("\n" + "🟡"*20 + " AGENTIC AI PICKS " + "🟡"*20)
+                for k, v in (agentic_trace.get("picks") or {}).items():
+                    typer.echo(f"  {k}: {v}")
+                if agentic_url:
+                    typer.echo(f"\n✅ Agentic AI found apply URL: {agentic_url}")
+                else:
+                    typer.echo("\n❌ Agentic AI found no apply URL")
+            except Exception as e:
+                typer.echo(f"❌ Agentic AI approach failed: {e}")
+
+            try:
+                typer.echo("\n🔍 Using legacy heuristic DuckDuckGo approach...")
+                company_home = await find_company_homepage_from_job_page(page)
+                title_txt = (await page.title()) or ""
+                company_dom = domain(company_home) if company_home else None
+                legacy_url = await find_apply_url(page, company_name, title_txt, company_dom)
+                if legacy_url:
+                    typer.echo(f"✅ Legacy approach found apply URL: {legacy_url}")
+                else:
+                    typer.echo("❌ Legacy approach found no apply URL")
+            except Exception as e:
+                typer.echo(f"❌ Legacy approach failed: {e}")
+
+            typer.echo("\n" + "🔄"*20 + " COMPARISON " + "🔄"*20)
+            typer.echo(f"Agentic AI:  {agentic_url or 'None'}")
+            typer.echo(f"Legacy:      {legacy_url or 'None'}")
+
+            chosen_apply_url = agentic_url or legacy_url
+
+            # Navigate to the application form
+            if chosen_apply_url:
+                await goto_and_wait(page, chosen_apply_url)
+                try:
+                    await page.wait_for_load_state(state="networkidle", timeout=20000)
+                except Exception:
+                    pass
+            else:
+                clicked = await _heuristic_click_apply(page)
+                if not clicked:
+                    typer.echo("⚠️  No 'Apply' control found via heuristics; staying on current page.")
+                try:
+                    await page.wait_for_load_state(state="networkidle", timeout=20000)
+                except Exception:
+                    pass
+
+            # Extract form schema from the live form page
+            schema = await extract_form_schema_from_page(page, url=page.url)
+            typer.echo("[apply-flow] Extracted schema; selecting best resume and generating answers...")
+
+            # Select best resume for this job using live job description text
+            try:
+                alignment, align_trace = select_best_resume_for_job_description(
+                    profile=user_profile_obj, job_description_text=initial_text or (await page.title() or ""), model=model
+                )
+                typer.echo("\n" + "🔵"*20 + " RESUME ALIGNMENT PROMPT " + "🔵"*20)
+                typer.echo(align_trace.get("prompt") or "")
+                typer.echo("\n" + "🟢"*20 + " RESUME ALIGNMENT RESPONSE " + "🟢"*20)
+                typer.echo(align_trace.get("response") or "")
+                chosen_resume_id = alignment.chosen_resume_id
+            except Exception as e:
+                typer.echo(f"⚠️ Resume alignment failed: {e}. Proceeding with best available resume text.")
+                chosen_resume_id = None
+
+            # Load chosen resume text/pdf paths
+            from pathlib import Path as _P
+            chosen_resume_txt = ""
+            preferred_pdf_path: Optional[_P] = None
+            try:
+                import json as _json
+                idx_path = user_profile_obj.path / "resumes.json"
+                if idx_path.exists():
+                    idx = _json.loads(idx_path.read_text(encoding="utf-8"))
+                    for itm in idx.get("resumes", []):
+                        if not chosen_resume_id or itm.get("id") == chosen_resume_id:
+                            txt_p = itm.get("txt_path")
+                            pdf_p = itm.get("pdf_path")
+                            if txt_p and _P(txt_p).exists():
+                                chosen_resume_txt = _P(txt_p).read_text(encoding="utf-8")
+                            if pdf_p and _P(pdf_p).exists():
+                                preferred_pdf_path = _P(pdf_p)
+                            if chosen_resume_id:
+                                break
+            except Exception:
+                pass
+            if not chosen_resume_txt:
+                # Fallback: read all available resume.txt under profile
+                try:
+                    import glob
+                    txts = []
+                    for p in glob.glob(str(user_profile_obj.path / "**/resume_pdf/**/resume.txt"), recursive=True):
+                        try:
+                            txts.append(_P(p).read_text(encoding="utf-8"))
+                        except Exception:
+                            pass
+                    chosen_resume_txt = "\n\n".join(txts)[:20000]
+                except Exception:
+                    chosen_resume_txt = ""
+
+            # Generate answers with resume + context
+            answered_schema = generate_answers(
+                schema,
+                resume_text=chosen_resume_txt,
+                job_context=f"URL: {page.url}",
+                ignore_optional=ignore_optional,
+                model=model,
+            )
+
+            # Execute fill plan (no submit)
+            await execute_fill_plan(
+                page,
+                answered_schema,
+                user_profile_obj.path,
+                wait_seconds=hold_seconds,
+                preferred_resume_pdf=preferred_pdf_path,
+            )
+
+        finally:
+            if hasattr(page, '_playwright'):
+                await page.close()
+            else:
+                await ctx.close()
+
+    asyncio.run(main())
 
 @app.command("snapshot-url")
 def snapshot_url(

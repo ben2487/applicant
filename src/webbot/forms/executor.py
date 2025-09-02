@@ -27,8 +27,11 @@ async def _scroll_into_view(page: Page, selector: str, padding: int) -> None:
         pass
 
 
-def _pick_resume_pdf(profile_root: Path) -> Optional[Path]:
-    # Search for any resume.pdf under user_profiles/*/resume_pdf/**/resume.pdf
+def _pick_resume_pdf(profile_root: Path, preferred: Optional[Path] = None) -> Optional[Path]:
+    # If a preferred resume is provided and exists, use it
+    if preferred and preferred.exists():
+        return preferred
+    # Otherwise, search for any resume.pdf under user_profiles/*/resume_pdf/**/resume.pdf
     candidates: List[Path] = list(profile_root.glob("**/resume_pdf/**/resume.pdf"))
     if not candidates:
         return None
@@ -214,11 +217,11 @@ async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionO
         return
 
 
-async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile_root: Path, *, wait_seconds: int = 60) -> None:
+async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile_root: Path, *, wait_seconds: int = 60, preferred_resume_pdf: Optional[Path] = None) -> None:
     opts = ExecutionOptions()
     print("[executor] Form loaded; starting execution")
     # 1) Upload resume first to trigger autofill
-    resume = _pick_resume_pdf(profile_root)
+    resume = _pick_resume_pdf(profile_root, preferred=preferred_resume_pdf)
     if resume:
         await _upload_resume(page, schema_with_answers, resume, opts)
         # Give autofill a bit more time to propagate values and render
