@@ -16,6 +16,7 @@ from .browser import smart_launch_with_profile, goto_and_wait
 from .forms import snapshot_page
 from .forms.extractor import extract_form_schema_from_snapshot_dir, extract_form_schema_from_page
 from .forms.executor import execute_fill_plan
+from .forms.answerer import generate_answers
 from .user_profiles import find_user_profile_by_name
 from .extract import extract_visible_text
 from .apply_finder import (
@@ -730,6 +731,167 @@ def extract_form_from_snapshot(
 
     asyncio.run(main())
 
+
+@app.command("answer-form-from-snapshot")
+def answer_form_from_snapshot(
+    snapshot_dir: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, readable=True),
+    user_profile: str = typer.Option("user_ben", "--user-profile", help="User profile for resume selection"),
+    ignore_optional: bool = typer.Option(True, "--ignore-optional/--no-ignore-optional"),
+    model: str = typer.Option("gpt-4o", "--model"),
+):
+    """Extract a form schema from a saved snapshot, generate LLM answers using the user's resumes, and print key Q&A pairs."""
+    import json as _json
+    from .resume_alignment import run_alignment_for_files
+
+    profile = _resolve_user_profile(user_profile)
+    job_desc_path = repo_root() / "data/test_job_desc1.txt"
+
+    async def main():
+        # Extract schema from snapshot
+        schema = await extract_form_schema_from_snapshot_dir(snapshot_dir)
+
+        # Pick best resume for the provided job description (existing flow)
+        try:
+            alignment, trace = run_alignment_for_files(profile=profile, job_desc_path=job_desc_path, model="gpt-4o")
+            chosen_resume_txt = ""
+            # Find chosen resume txt from user profile's resumes.json (already handled in alignment module)
+            # We don't have a direct path here; fallback: read all resume txts under the profile and concatenate
+            # or just use the alignment trace response as high-level context if needed.
+        except Exception as e:
+            typer.echo(f"⚠️ Resume alignment failed: {e}. Proceeding with empty resume context.")
+            alignment = None
+            chosen_resume_txt = ""
+
+        # If we can't pull the chosen resume text via alignment module, fallback to any available resume.txt under the profile
+        if not chosen_resume_txt:
+            try:
+                import glob
+                txts = []
+                for p in glob.glob(str(profile.path / "**/resume_pdf/**/resume.txt"), recursive=True):
+                    try:
+                        txts.append(Path(p).read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                chosen_resume_txt = "\n\n".join(txts)[:20000]
+            except Exception:
+                chosen_resume_txt = ""
+
+        # Build a minimal job context from snapshot manifest URL
+        try:
+            from .forms.snapshot_loader import load_snapshot_manifest
+            man = load_snapshot_manifest(snapshot_dir)
+            job_context = f"Form URL: {man.url}"
+        except Exception:
+            job_context = None
+
+        # Generate answers
+        answered = generate_answers(
+            schema,
+            resume_text=chosen_resume_txt,
+            job_context=job_context,
+            ignore_optional=ignore_optional,
+            model=model,
+        )
+
+        # Print key questions and answers
+        pairs = []
+        for s in answered.sections:
+            for f in s.fields:
+                label = f.label or f.name or f.field_id
+                ans = f.meta.get("answer") if isinstance(f.meta, dict) else None
+                if ans:
+                    pairs.append({"id": f.field_id, "label": label, "type": f.type, "answer": ans})
+
+        typer.echo(_json.dumps({
+            "url": job_context,
+            "valid": answered.validity.is_valid_job_application_form,
+            "qa": pairs,
+        }, indent=2))
+
+    asyncio.run(main())
+
+
+@app.command("answer-realworld-fixtures")
+def answer_realworld_fixtures(
+    user_profile: str = typer.Option("user_ben", "--user-profile", help="User profile for resume selection"),
+    base_dir: Path = typer.Option(
+        Path("tests/fixtures/realworld"),
+        "--base-dir",
+        help="Base directory of realworld fixtures",
+    ),
+    model: str = typer.Option("gpt-4o", "--model"),
+    ignore_optional: bool = typer.Option(True, "--ignore-optional/--no-ignore-optional"),
+):
+    """Iterate each realworld fixture folder, load its initial/after_apply snapshots when present, generate answers, and print key Q&A."""
+    import json as _json
+    from .forms.snapshot_loader import load_snapshot_manifest
+    from .resume_alignment import run_alignment_for_files
+
+    profile = _resolve_user_profile(user_profile)
+    job_desc_path = repo_root() / "data/test_job_desc1.txt"
+
+    async def main():
+        results: list[dict] = []
+
+        # Precompute resume text once
+        chosen_resume_txt = ""
+        try:
+            alignment, trace = run_alignment_for_files(profile=profile, job_desc_path=job_desc_path, model="gpt-4o")
+        except Exception:
+            alignment = None
+        if not chosen_resume_txt:
+            try:
+                import glob
+                txts = []
+                for p in glob.glob(str(profile.path / "**/resume_pdf/**/resume.txt"), recursive=True):
+                    try:
+                        txts.append(Path(p).read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                chosen_resume_txt = "\n\n".join(txts)[:20000]
+            except Exception:
+                chosen_resume_txt = ""
+
+        # Iterate folders under base_dir
+        if not base_dir.exists():
+            typer.echo(f"⚠️ Base dir not found: {base_dir}")
+            raise typer.Exit(code=2)
+
+        for folder in sorted([p for p in base_dir.iterdir() if p.is_dir()]):
+            for phase in ("after_apply", "initial"):
+                snap = folder / phase
+                if not snap.exists():
+                    continue
+                try:
+                    schema = await extract_form_schema_from_snapshot_dir(snap)
+                    man = load_snapshot_manifest(snap)
+                    answered = generate_answers(
+                        schema,
+                        resume_text=chosen_resume_txt,
+                        job_context=f"Fixture: {folder.name} | Phase: {phase} | URL: {man.url}",
+                        ignore_optional=ignore_optional,
+                        model=model,
+                    )
+                    qa = []
+                    for s in answered.sections:
+                        for f in s.fields:
+                            label = f.label or f.name or f.field_id
+                            ans = f.meta.get("answer") if isinstance(f.meta, dict) else None
+                            if ans:
+                                qa.append({"id": f.field_id, "label": label, "type": f.type, "answer": ans})
+                    results.append({
+                        "fixture": folder.name,
+                        "phase": phase,
+                        "url": man.url,
+                        "valid": answered.validity.is_valid_job_application_form,
+                        "qa": qa,
+                    })
+                except Exception as e:
+                    results.append({"fixture": folder.name, "phase": phase, "error": str(e)})
+
+        typer.echo(_json.dumps(results, indent=2))
+
+    asyncio.run(main())
 
 @app.command("execute-form-url")
 def execute_form_url(
