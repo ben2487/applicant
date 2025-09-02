@@ -13,6 +13,8 @@ from .user_profiles import (
     save_user_settings,
 )
 from .browser import smart_launch_with_profile, goto_and_wait
+from .forms import snapshot_page
+from .forms.extractor import extract_form_schema_from_snapshot_dir, extract_form_schema_from_page
 from .extract import extract_visible_text
 from .apply_finder import (
     load_do_not_apply_domains,
@@ -423,6 +425,351 @@ def run(
 
     asyncio.run(main())
 
+
+@app.command("snapshot-url")
+def snapshot_url(
+    url: str = typer.Argument(..., help="URL to snapshot for fixture generation"),
+    use_browser_profile: Optional[str] = typer.Option(
+        None,
+        "--use-browser-profile",
+        help="Chrome browser profile name or dir (e.g., 'Default', 'Profile 1').",
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None,
+        "--out-dir",
+        help="Directory to write snapshot artifacts. Defaults to repo_root()/snapshots/<domain>-<ts>",
+    ),
+    headless: bool = typer.Option(True, "--headless/--no-headless", help="Run in headless mode"),
+    wait_selector: Optional[str] = typer.Option(
+        None,
+        "--wait-selector",
+        help="Optional CSS selector to wait for before snapshot (e.g., input[type='file'])",
+    ),
+):
+    """
+    Visit a URL and save an on-disk snapshot (HTML + screenshot). Use this to
+    collect real-world pages to drive tests.
+    """
+    from .config import repo_root
+    import datetime as _dt
+
+    browser_profile = _resolve_browser_profile(use_browser_profile)
+
+    async def main():
+        ctx, page = await smart_launch_with_profile(browser_profile, headless=headless)
+        try:
+            await goto_and_wait(page, url)
+            # Give dynamic apps time to hydrate
+            try:
+                await page.wait_for_load_state(state="networkidle", timeout=20000)
+            except Exception:
+                pass
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=20000)
+                except Exception:
+                    pass
+
+            # Determine output directory
+            base = out_dir or (repo_root() / "snapshots")
+            base.mkdir(parents=True, exist_ok=True)
+            ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+            import tldextract as _tld
+
+            d = _tld.extract(url)
+            dom = ".".join([p for p in [d.domain, d.suffix] if p]) or "page"
+            dest = base / f"{dom}-{ts}"
+
+            art = await snapshot_page(page, dest, with_screenshot=True)
+            typer.echo(f"✅ Snapshot saved to {art.out_dir}")
+            typer.echo(f"   HTML: {art.html_path}")
+            if art.screenshot_path:
+                typer.echo(f"   Screenshot: {art.screenshot_path}")
+            typer.echo(f"   Frames: {len(art.frames)}")
+        finally:
+            if hasattr(page, '_playwright'):
+                await page.close()
+            else:
+                await ctx.close()
+
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        typer.echo(f"❌ Snapshot failed: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command("download-test-url")
+def download_test_url(
+    url: str = typer.Argument(..., help="URL to snapshot into tests/fixtures/realworld"),
+    use_browser_profile: Optional[str] = typer.Option(
+        None,
+        "--use-browser-profile",
+        help="Chrome browser profile name or dir (e.g., 'Default', 'Profile 1').",
+    ),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name",
+        help="Folder name under tests/fixtures/realworld to save into. Defaults to <domain>-<lastpath>",
+    ),
+    click_apply: bool = typer.Option(
+        False,
+        "--click-apply/--no-click-apply",
+        help="Attempt to click an 'Apply' button and snapshot the resulting form view as well.",
+    ),
+    apply_selector: Optional[str] = typer.Option(
+        None,
+        "--apply-selector",
+        help="Optional CSS selector to click instead of heuristic detection.",
+    ),
+    headless: bool = typer.Option(True, "--headless/--no-headless", help="Run in headless mode"),
+    wait_selector: Optional[str] = typer.Option(
+        None,
+        "--wait-selector",
+        help="Optional CSS selector to wait for before initial snapshot.",
+    ),
+    manual_after_apply: bool = typer.Option(
+        False,
+        "--manual-after-apply/--no-manual-after-apply",
+        help="If set with --no-headless, allows user to click Apply manually; press Enter to capture after_apply.",
+    ),
+    manual_after_apply_delay: Optional[int] = typer.Option(
+        None,
+        "--manual-after-apply-delay",
+        help="Optional seconds to wait in manual mode before capturing after_apply (skips Enter).",
+    ),
+):
+    """
+    Snapshot a page into tests/fixtures/realworld/<name>/ as HTML and screenshot.
+    Optionally click an 'Apply' button (heuristic or selector) and take a second snapshot.
+    """
+    from .config import repo_root
+    import re as _re
+    import tldextract as _tld
+    from pathlib import Path as _P
+
+    browser_profile = _resolve_browser_profile(use_browser_profile)
+
+    async def _heuristic_click_apply(page):
+        # If a CSS selector override was provided, try a sequence of click strategies
+        if apply_selector:
+            candidates = [
+                apply_selector,
+                f"{apply_selector} >> nth=0",
+                "a:has(button:has-text('Apply'))",
+                "button:has-text('Apply')",
+                "a:has-text('Apply')",
+                "button:has-text('Apply for this Job')",
+                "a:has-text('Apply for this Job')",
+            ]
+            for sel in candidates:
+                try:
+                    await page.wait_for_selector(sel, timeout=5000)
+                except Exception:
+                    # keep trying other candidates
+                    continue
+                loc = page.locator(sel)
+                # Attempt to reveal by scrolling
+                if await loc.count() == 0:
+                    try:
+                        for _ in range(8):
+                            await page.mouse.wheel(0, 1800)
+                            await page.wait_for_timeout(200)
+                            if await loc.count() > 0:
+                                break
+                    except Exception:
+                        pass
+                if await loc.count() == 0:
+                    continue
+                # Try normal click
+                try:
+                    await loc.first.scroll_into_view_if_needed()
+                except Exception:
+                    pass
+                try:
+                    await loc.first.click()
+                    return True
+                except Exception:
+                    # Try JS click
+                    try:
+                        clicked = await page.evaluate(
+                            "(sel) => {\n"
+                            "  const el = document.querySelector(sel);\n"
+                            "  if (!el) return false;\n"
+                            "  const a = el.closest('a') || (el.tagName === 'A' ? el : null);\n"
+                            "  (a || el).scrollIntoView({block: 'center'});\n"
+                            "  (a || el).click();\n"
+                            "  return true;\n"
+                            "}",
+                            sel,
+                        )
+                        if clicked:
+                            try:
+                                await page.wait_for_load_state(state="networkidle", timeout=20000)
+                            except Exception:
+                                pass
+                            return True
+                    except Exception:
+                        # Try focusing and pressing Enter
+                        try:
+                            await loc.first.focus()
+                            await page.keyboard.press("Enter")
+                            return True
+                        except Exception:
+                            continue
+        # Try role=button/link with accessible name containing 'apply'
+        for role in ("button", "link"):
+            try:
+                loc = page.get_by_role(role, name=_re.compile(r"apply|submit application", _re.I))
+                if await loc.count() > 0:
+                    await loc.first.scroll_into_view_if_needed()
+                    await loc.first.click()
+                    return True
+            except Exception:
+                pass
+        # Fallback: visible text
+        try:
+            loc = page.locator(":text-matches('^\\s*(Apply|Apply now|Apply for this job|Submit application)\\b', 'i')")
+            if await loc.count() > 0:
+                await loc.first.scroll_into_view_if_needed()
+                await loc.first.click()
+                return True
+        except Exception:
+            pass
+        return False
+
+    async def main():
+        ctx, page = await smart_launch_with_profile(browser_profile, headless=headless)
+        try:
+            await goto_and_wait(page, url)
+            try:
+                await page.wait_for_load_state(state="networkidle", timeout=20000)
+            except Exception:
+                pass
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=20000)
+                except Exception:
+                    pass
+
+            d = _tld.extract(url)
+            dom = ".".join([p for p in [d.domain, d.suffix] if p]) or "page"
+            # derive a short path suffix for naming
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                tail = parsed.path.rstrip("/").split("/")[-1] or "root"
+            except Exception:
+                tail = "page"
+
+            folder = name or f"{dom}-{tail}"
+            base = repo_root() / "tests" / "fixtures" / "realworld" / folder
+            base.mkdir(parents=True, exist_ok=True)
+
+            # Snapshot initial view
+            initial_dir = base / "initial"
+            art1 = await snapshot_page(page, initial_dir, with_screenshot=True)
+            typer.echo(f"✅ Initial snapshot saved: {art1.out_dir}")
+
+            if click_apply or manual_after_apply:
+                if manual_after_apply and not headless:
+                    if manual_after_apply_delay and manual_after_apply_delay > 0:
+                        typer.echo(
+                            f"⏳ Manual mode: Click Apply in the browser. Auto-capturing after_apply in {manual_after_apply_delay}s..."
+                        )
+                        await asyncio.sleep(manual_after_apply_delay)
+                    else:
+                        typer.echo(
+                            "⏳ Manual mode: Please click the Apply button in the browser, then press Enter here to capture after_apply..."
+                        )
+                        try:
+                            input()
+                        except EOFError:
+                            pass
+                else:
+                    clicked = await _heuristic_click_apply(page)
+                    if not clicked:
+                        typer.echo("⚠️  No 'Apply' control found via heuristics.")
+                # Give the page a moment to render dynamic forms/tabs
+                try:
+                    await page.wait_for_load_state(state="networkidle", timeout=20000)
+                except Exception:
+                    pass
+                after_dir = base / "after_apply"
+                art2 = await snapshot_page(page, after_dir, with_screenshot=True)
+                typer.echo(f"✅ After-apply snapshot saved: {art2.out_dir}")
+        finally:
+            if hasattr(page, '_playwright'):
+                await page.close()
+            else:
+                await ctx.close()
+
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        typer.echo(f"❌ Download failed: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command("extract-form-from-snapshot")
+def extract_form_from_snapshot(
+    snapshot_dir: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, readable=True),
+):
+    """Extract and pretty-print form schema from a saved snapshot directory."""
+    async def main():
+        try:
+            schema = await extract_form_schema_from_snapshot_dir(snapshot_dir)
+        except Exception as e:
+            typer.echo(f"❌ Extraction failed: {e}")
+            raise typer.Exit(code=1)
+        import json
+
+        typer.echo(json.dumps(schema.model_dump(), indent=2))
+
+    asyncio.run(main())
+
+
+@app.command("extract-form-url")
+def extract_form_url(
+    url: str = typer.Argument(..., help="URL of the application form page to extract"),
+    use_browser_profile: Optional[str] = typer.Option(
+        None,
+        "--use-browser-profile",
+        help="Chrome browser profile name or dir (e.g., 'Default', 'Profile 1').",
+    ),
+    headless: bool = typer.Option(False, "--headless/--no-headless", help="Run in headless mode"),
+    wait_selector: Optional[str] = typer.Option(
+        None,
+        "--wait-selector",
+        help="Optional CSS selector to wait for before extraction (e.g., input[type='file'])",
+    ),
+):
+    """Open a browser, navigate to URL, extract form schema from live DOM, and print JSON."""
+    browser_profile = _resolve_browser_profile(use_browser_profile)
+
+    async def main():
+        ctx, page = await smart_launch_with_profile(browser_profile, headless=headless)
+        try:
+            await goto_and_wait(page, url)
+            try:
+                await page.wait_for_load_state(state="networkidle", timeout=20000)
+            except Exception:
+                pass
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=20000)
+                except Exception:
+                    pass
+            schema = await extract_form_schema_from_page(page, url=url)
+            import json as _json
+            typer.echo(_json.dumps(schema.model_dump(), indent=2))
+        finally:
+            if hasattr(page, '_playwright'):
+                await page.close()
+            else:
+                await ctx.close()
+
+    asyncio.run(main())
 
 if __name__ == "__main__":
     app()

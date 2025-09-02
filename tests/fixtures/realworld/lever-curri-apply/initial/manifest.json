@@ -1,0 +1,101 @@
+{
+  "url": "https://jobs.lever.co/curri/79f37da3-3054-4060-b8b5-1d74380377b2/apply",
+  "page_html": "page.html",
+  "page_dom_html": "dom.html",
+  "screenshot": "screenshot.png",
+  "frames": [
+    {
+      "url": "https://jobs.lever.co/curri/79f37da3-3054-4060-b8b5-1d74380377b2/apply",
+      "path": "frame-0.html",
+      "dom_path": "frame-0-dom.html",
+      "html_len": 373919,
+      "index_path": [
+        0
+      ]
+    },
+    {
+      "url": "https://newassets.hcaptcha.com/captcha/v1/cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a/static/hcaptcha-enclave.html#frame=enclave&_channel=00crx95r8oqk4&_origin=https%3A%2F%2Fjobs.lever.co&host=jobs.lever.co&se=cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a",
+      "path": "frame-0-0.html",
+      "dom_path": "frame-0-0-dom.html",
+      "html_len": 34980,
+      "index_path": [
+        0,
+        0
+      ]
+    },
+    {
+      "url": "https://newassets.hcaptcha.com/captcha/v1/cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a/static/hcaptcha.html#frame=challenge&id=0566xtau2zzw&host=jobs.lever.co&sentry=true&reportapi=https%3A%2F%2Faccounts.hcaptcha.com&recaptchacompat=true&custom=false&hl=en&tplinks=on&andint=off&se=cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a&pstissuer=https%3A%2F%2Fpst-issuer.hcaptcha.com&sitekey=e33f87f8-88ec-4e1a-9a13-df9bbb1d8120&size=invisible&theme=light&origin=https%3A%2F%2Fnewassets.hcaptcha.com",
+      "path": "frame-0-0-0.html",
+      "dom_path": "frame-0-0-0-dom.html",
+      "html_len": 504943,
+      "index_path": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "url": "https://newassets.hcaptcha.com/captcha/v1/cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a/static/hcaptcha.html#frame=checkbox-invisible",
+      "path": "frame-0-0-1.html",
+      "dom_path": "frame-0-0-1-dom.html",
+      "html_len": 447927,
+      "index_path": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "url": "https://newassets.hcaptcha.com/captcha/v1/cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a/static/hcaptcha-enclave.html#frame=enclave&_channel=1v3s1dsro0o&_origin=https%3A%2F%2Fjobs.lever.co&host=jobs.lever.co&se=cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a",
+      "path": "frame-0-1.html",
+      "dom_path": "frame-0-1-dom.html",
+      "html_len": 34980,
+      "index_path": [
+        0,
+        1
+      ]
+    },
+    {
+      "url": "https://newassets.hcaptcha.com/captcha/v1/cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a/static/hcaptcha.html#frame=challenge&id=0h2av1ax2j4b&host=jobs.lever.co&sentry=true&reportapi=https%3A%2F%2Faccounts.hcaptcha.com&recaptchacompat=true&custom=false&hl=en&tplinks=on&andint=off&se=cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a&pstissuer=https%3A%2F%2Fpst-issuer.hcaptcha.com&sitekey=e33f87f8-88ec-4e1a-9a13-df9bbb1d8120&size=invisible&theme=light&origin=https%3A%2F%2Fnewassets.hcaptcha.com",
+      "path": "frame-0-1-0.html",
+      "dom_path": "frame-0-1-0-dom.html",
+      "html_len": 504943,
+      "index_path": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "url": "https://newassets.hcaptcha.com/captcha/v1/cbd9d07af2e32fb75bf89a777c4d2e6c334d0b8a/static/hcaptcha.html#frame=checkbox-invisible",
+      "path": "frame-0-1-1.html",
+      "dom_path": "frame-0-1-1-dom.html",
+      "html_len": 447927,
+      "index_path": [
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "url": "about:blank",
+      "path": "frame-0-2.html",
+      "dom_path": "frame-0-2-dom.html",
+      "html_len": 0,
+      "index_path": [
+        0,
+        2
+      ]
+    },
+    {
+      "url": "https://www.linkedin.com/talentwidgets/apply-with-linkedin#xdOrigin=https%3A%2F%2Fjobs.lever.co&xdChannel=e7f86024-d1e1-481b-943b-a577fbb4d31d",
+      "path": "frame-0-3.html",
+      "dom_path": "frame-0-3-dom.html",
+      "html_len": 13792,
+      "index_path": [
+        0,
+        3
+      ]
+    }
+  ]
+}

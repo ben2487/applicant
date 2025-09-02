@@ -1,0 +1,92 @@
+{
+  "url": "https://www.optery.com/careers/?ashby_jid=97a7f90f-9763-4d21-a739-dfbce32581b5",
+  "page_html": "page.html",
+  "page_dom_html": "dom.html",
+  "screenshot": "screenshot.png",
+  "frames": [
+    {
+      "url": "https://www.optery.com/careers/?ashby_jid=97a7f90f-9763-4d21-a739-dfbce32581b5",
+      "path": "frame-0.html",
+      "dom_path": "frame-0-dom.html",
+      "html_len": 92081,
+      "index_path": [
+        0
+      ]
+    },
+    {
+      "url": "https://jobs.ashbyhq.com/optery/97a7f90f-9763-4d21-a739-dfbce32581b5/application?embed=js",
+      "path": "frame-0-0.html",
+      "dom_path": "frame-0-0-dom.html",
+      "html_len": 97223,
+      "index_path": [
+        0,
+        0
+      ]
+    },
+    {
+      "url": "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LeFb_YUAAAAALUD5h-BiQEp8JaFChe0e0A6r49Y&co=aHR0cHM6Ly9qb2JzLmFzaGJ5aHEuY29tOjQ0Mw..&hl=en&v=2sJvksnKlEApLvJt2btz_q7n&size=invisible&anchor-ms=20000&execute-ms=15000&cb=12pwypz1xxj5",
+      "path": "frame-0-0-0.html",
+      "dom_path": "frame-0-0-0-dom.html",
+      "html_len": 76340,
+      "index_path": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "url": "about:blank",
+      "path": "frame-0-0-0-0.html",
+      "dom_path": "frame-0-0-0-0-dom.html",
+      "html_len": 39,
+      "index_path": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "url": "about:blank",
+      "path": "frame-0-0-1.html",
+      "dom_path": "frame-0-0-1-dom.html",
+      "html_len": 39,
+      "index_path": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "url": "about:blank",
+      "path": "frame-0-1.html",
+      "dom_path": "frame-0-1-dom.html",
+      "html_len": 237,
+      "index_path": [
+        0,
+        1
+      ]
+    },
+    {
+      "url": "https://www.googletagmanager.com/static/service_worker/5840/sw_iframe.html?origin=https%3A%2F%2Fwww.optery.com",
+      "path": "frame-0-1-0.html",
+      "dom_path": "frame-0-1-0-dom.html",
+      "html_len": 3552,
+      "index_path": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "url": "about:blank",
+      "path": "frame-0-2.html",
+      "dom_path": "frame-0-2-dom.html",
+      "html_len": 39,
+      "index_path": [
+        0,
+        2
+      ]
+    }
+  ]
+}

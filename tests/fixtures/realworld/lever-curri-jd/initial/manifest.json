@@ -1,0 +1,17 @@
+{
+  "url": "https://jobs.lever.co/curri/79f37da3-3054-4060-b8b5-1d74380377b2",
+  "page_html": "page.html",
+  "page_dom_html": "dom.html",
+  "screenshot": "screenshot.png",
+  "frames": [
+    {
+      "url": "https://jobs.lever.co/curri/79f37da3-3054-4060-b8b5-1d74380377b2",
+      "path": "frame-0.html",
+      "dom_path": "frame-0-dom.html",
+      "html_len": 353052,
+      "index_path": [
+        0
+      ]
+    }
+  ]
+}

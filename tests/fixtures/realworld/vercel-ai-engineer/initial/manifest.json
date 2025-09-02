@@ -1,0 +1,37 @@
+{
+  "url": "https://vercel.com/careers/ai-engineer-5517523004",
+  "page_html": "page.html",
+  "page_dom_html": "dom.html",
+  "screenshot": "screenshot.png",
+  "frames": [
+    {
+      "url": "https://vercel.com/careers/ai-engineer-5517523004",
+      "path": "frame-0.html",
+      "dom_path": "frame-0-dom.html",
+      "html_len": 378456,
+      "index_path": [
+        0
+      ]
+    },
+    {
+      "url": "about:blank",
+      "path": "frame-0-0.html",
+      "dom_path": "frame-0-0-dom.html",
+      "html_len": 0,
+      "index_path": [
+        0,
+        0
+      ]
+    },
+    {
+      "url": "about:blank",
+      "path": "frame-0-1.html",
+      "dom_path": "frame-0-1-dom.html",
+      "html_len": 0,
+      "index_path": [
+        0,
+        1
+      ]
+    }
+  ]
+}

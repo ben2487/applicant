@@ -1,0 +1,17 @@
+{
+  "url": "https://jobs.ashbyhq.com/infisical/f137cca7-0698-46f8-a944-f200ec8b61dd/application",
+  "page_html": "page.html",
+  "page_dom_html": "dom.html",
+  "screenshot": "screenshot.png",
+  "frames": [
+    {
+      "url": "https://jobs.ashbyhq.com/infisical/f137cca7-0698-46f8-a944-f200ec8b61dd/application",
+      "path": "frame-0.html",
+      "dom_path": "frame-0-dom.html",
+      "html_len": 147204,
+      "index_path": [
+        0
+      ]
+    }
+  ]
+}
