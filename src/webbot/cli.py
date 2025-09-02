@@ -15,6 +15,8 @@ from .user_profiles import (
 from .browser import smart_launch_with_profile, goto_and_wait
 from .forms import snapshot_page
 from .forms.extractor import extract_form_schema_from_snapshot_dir, extract_form_schema_from_page
+from .forms.executor import execute_fill_plan
+from .user_profiles import find_user_profile_by_name
 from .extract import extract_visible_text
 from .apply_finder import (
     load_do_not_apply_domains,
@@ -725,6 +727,69 @@ def extract_form_from_snapshot(
         import json
 
         typer.echo(json.dumps(schema.model_dump(), indent=2))
+
+    asyncio.run(main())
+
+
+@app.command("execute-form-url")
+def execute_form_url(
+    url: str = typer.Argument(..., help="URL of the application form page to execute (no submit)"),
+    user_profile: str = typer.Option("user_ben", "--user-profile", help="User profile to pick resumes from"),
+    use_browser_profile: Optional[str] = typer.Option(
+        None,
+        "--use-browser-profile",
+        help="Chrome browser profile name or dir (e.g., 'Default', 'Profile 1').",
+    ),
+    headless: bool = typer.Option(False, "--headless/--no-headless", help="Run in headless mode"),
+    wait_selector: Optional[str] = typer.Option(
+        None,
+        "--wait-selector",
+        help="Optional CSS selector to wait for before executing (e.g., input[type='file'])",
+    ),
+    hold_seconds: int = typer.Option(60, "--hold-seconds", help="Seconds to keep browser open for manual review"),
+):
+    """Open a browser, navigate to URL, extract schema, and fill answers + upload resume; do not submit."""
+    browser_profile = _resolve_browser_profile(use_browser_profile)
+    prof = find_user_profile_by_name(user_profile)
+    if not prof:
+        typer.echo(f"❌ User profile not found: {user_profile}")
+        raise typer.Exit(code=2)
+
+    async def main():
+        ctx, page = await smart_launch_with_profile(browser_profile, headless=headless)
+        try:
+            await goto_and_wait(page, url)
+            try:
+                await page.wait_for_load_state(state="networkidle", timeout=20000)
+            except Exception:
+                pass
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=20000)
+                except Exception:
+                    pass
+            schema = await extract_form_schema_from_page(page, url=url)
+            # Hardcode simple answers into meta.answer for demo
+            for section in schema.sections:
+                for f in section.fields:
+                    if f.type in {"text", "email", "tel"}:
+                        f.meta["answer"] = "Test Value"
+                    elif f.type == "textarea":
+                        f.meta["answer"] = "This is a test answer for validation."
+                    elif f.type == "select":
+                        f.meta["answer"] = "yes"
+                    elif f.type == "checkbox":
+                        # randomly select ~30% of checkboxes
+                        import random as _r
+                        f.meta["answer"] = "true" if _r.random() < 0.3 else "false"
+                    elif f.type == "radio":
+                        f.meta["answer"] = "true"
+            await execute_fill_plan(page, schema, prof.path, wait_seconds=hold_seconds)
+        finally:
+            if hasattr(page, '_playwright'):
+                await page.close()
+            else:
+                await ctx.close()
 
     asyncio.run(main())
 
