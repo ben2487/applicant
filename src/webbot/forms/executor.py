@@ -1,5 +1,6 @@
 from __future__ import annotations
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List
@@ -37,6 +38,7 @@ def _pick_resume_pdf(profile_root: Path) -> Optional[Path]:
 async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts: ExecutionOptions) -> bool:
     # Try visible file inputs first
     try:
+        print(f"[executor] Attempting resume upload: {resume_pdf}")
         file_inputs = page.locator('input[type="file"]')
         if await file_inputs.count() > 0:
             # prefer the first visible; else first
@@ -46,6 +48,7 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
                     if await el.is_visible():
                         await el.set_input_files(str(resume_pdf))
                         await page.wait_for_timeout(opts.wait_after_upload_ms)
+                        print("[executor] Resume upload completed (visible input).")
                         return True
                 except Exception:
                     continue
@@ -53,6 +56,7 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
             try:
                 await file_inputs.first.set_input_files(str(resume_pdf))
                 await page.wait_for_timeout(opts.wait_after_upload_ms)
+                print("[executor] Resume upload completed (first input).")
                 return True
             except Exception:
                 pass
@@ -77,6 +81,7 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
                     if await file_inputs.count() > 0:
                         await file_inputs.first.set_input_files(str(resume_pdf))
                         await page.wait_for_timeout(opts.wait_after_upload_ms)
+                        print("[executor] Resume upload completed (after clicking upload button).")
                         return True
                 except Exception:
                     pass
@@ -105,12 +110,43 @@ async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionO
             target_truthy = value.lower() in {"1", "true", "yes", "on"}
             if not target_truthy:
                 return
+            label_txt = (field.label or field.name or "").strip()
+            print(f"[executor] Selecting checkbox: {label_txt}")
             # Prefer clicking the control (labels/wrappers often toggle custom checkboxes)
             try:
-                await loc.click()
-                return
+                if await loc.count() > 0:
+                    await loc.first.click()
+                    return
             except Exception:
                 pass
+            # Try role-based checkbox by accessible name
+            if label_txt:
+                try:
+                    role_loc = page.get_by_role("checkbox", name=re.compile(rf"^{re.escape(label_txt)}$", re.I))
+                    if await role_loc.count() > 0:
+                        await role_loc.first.scroll_into_view_if_needed()
+                        await role_loc.first.click()
+                        return
+                except Exception:
+                    pass
+                # Try label association
+                try:
+                    lab_loc = page.get_by_label(label_txt)
+                    if await lab_loc.count() > 0:
+                        await lab_loc.first.scroll_into_view_if_needed()
+                        await lab_loc.first.click()
+                        return
+                except Exception:
+                    pass
+                # Fallback: click element containing the text
+                try:
+                    txt_loc = page.get_by_text(label_txt, exact=True)
+                    if await txt_loc.count() > 0:
+                        await txt_loc.first.scroll_into_view_if_needed()
+                        await txt_loc.first.click()
+                        return
+                except Exception:
+                    pass
             # Fallback: if it's a real input, ensure checked state
             try:
                 current = await loc.is_checked()
@@ -129,6 +165,7 @@ async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionO
 
 async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile_root: Path, *, wait_seconds: int = 60) -> None:
     opts = ExecutionOptions()
+    print("[executor] Form loaded; starting execution")
     # 1) Upload resume first to trigger autofill
     resume = _pick_resume_pdf(profile_root)
     if resume:
@@ -157,6 +194,8 @@ async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile
                     pass
                 if existing and existing.strip():
                     continue
+                if field.type in {"text", "email", "tel", "number", "date", "textarea"}:
+                    print(f"[executor] Filling {field.type}: {(f.label or f.name or f.field_id)} -> {answer}")
                 await _fill_field(page, f, str(answer), opts)
             except Exception:
                 continue

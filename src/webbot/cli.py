@@ -769,6 +769,7 @@ def execute_form_url(
                 except Exception:
                     pass
             schema = await extract_form_schema_from_page(page, url=url)
+            typer.echo("[cli] Extracted schema; generating demo answers...")
             # Hardcode simple answers into meta.answer for demo
             for section in schema.sections:
                 for f in section.fields:
@@ -784,6 +785,10 @@ def execute_form_url(
                         f.meta["answer"] = "true" if _r.random() < 0.3 else "false"
                     elif f.type == "radio":
                         f.meta["answer"] = "true"
+            # Print a compact summary of planned answers
+            checks = [ (f.label or f.name or f.field_id, f.meta.get("answer")) for s in schema.sections for f in s.fields if f.type == "checkbox" ]
+            texts  = [ (f.label or f.name or f.field_id, f.meta.get("answer")) for s in schema.sections for f in s.fields if f.type in {"text","email","tel","textarea"} ]
+            typer.echo(f"[cli] Text fields to fill: {len(texts)}; Checkboxes planned true: {sum(1 for _,v in checks if v=='true')} of {len(checks)}")
             await execute_fill_plan(page, schema, prof.path, wait_seconds=hold_seconds)
         finally:
             if hasattr(page, '_playwright'):
