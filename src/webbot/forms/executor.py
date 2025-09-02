@@ -265,7 +265,7 @@ async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile
                 if prepopulated:
                     continue
                 if f.type in {"text", "email", "tel", "number", "date", "textarea"}:
-                    print(f"[executor] Filling {field.type}: {(f.label or f.name or f.field_id)} -> {answer}")
+                    print(f"[executor] Filling {f.type}: {(f.label or f.name or f.field_id)} -> {answer}")
                 await _fill_field(page, f, str(answer), opts)
             except Exception as e:
                 print(f"[executor] Failed to fill field: {(f.label or f.name or f.field_id)} | error={e}")
