@@ -13,7 +13,7 @@ from .schema import FormSchema, FormField
 @dataclass
 class ExecutionOptions:
     scroll_padding: int = 200
-    wait_after_upload_ms: int = 4000
+    wait_after_upload_ms: int = 6000
 
 
 async def _scroll_into_view(page: Page, selector: str, padding: int) -> None:
@@ -93,10 +93,34 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
 async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionOptions) -> None:
     sel = field.locators.css or None
     if not sel:
+        # Fallbacks by label/placeholder when CSS is missing
+        label_txt = (field.label or "").strip()
+        if label_txt:
+            try:
+                loc = page.get_by_label(label_txt)
+                await loc.first.scroll_into_view_if_needed()
+                if field.type in {"text", "email", "tel", "number", "date", "textarea"}:
+                    await loc.fill(value)
+                    return
+            except Exception:
+                pass
         return
     try:
+        # Wait for the selector to appear post-render/autofill
+        try:
+            await page.wait_for_selector(sel, timeout=5000)
+        except Exception:
+            pass
         await _scroll_into_view(page, sel, opts.scroll_padding)
         loc = page.locator(sel)
+        if await loc.count() == 0:
+            # Fallback by label
+            label_txt = (field.label or "").strip()
+            if label_txt:
+                try:
+                    loc = page.get_by_label(label_txt)
+                except Exception:
+                    pass
         if field.type in {"text", "email", "tel", "number", "date"}:
             await loc.fill(value)
         elif field.type == "textarea":
@@ -170,6 +194,8 @@ async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile
     resume = _pick_resume_pdf(profile_root)
     if resume:
         await _upload_resume(page, schema_with_answers, resume, opts)
+        # Give autofill a bit more time to propagate values and render
+        await page.wait_for_timeout(2000)
 
     # 2) Fill remaining fields; if field has existing value from autofill, do not override
     for section in schema_with_answers.sections:
@@ -183,21 +209,24 @@ async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile
             # Check if already populated
             sel = f.locators.css or None
             if not sel:
-                continue
+                print(f"[executor] No selector for field: {(f.label or f.name or f.field_id)}; trying label fallback")
             try:
-                loc = page.locator(sel)
+                loc = page.locator(sel) if sel else None
                 # prioritize existing value
                 existing = None
                 try:
-                    existing = await loc.input_value()
+                    if loc:
+                        existing = await loc.input_value()
                 except Exception:
                     pass
                 if existing and existing.strip():
+                    print(f"[executor] Skipping pre-populated field: {(f.label or f.name or f.field_id)}")
                     continue
                 if field.type in {"text", "email", "tel", "number", "date", "textarea"}:
                     print(f"[executor] Filling {field.type}: {(f.label or f.name or f.field_id)} -> {answer}")
                 await _fill_field(page, f, str(answer), opts)
             except Exception:
+                print(f"[executor] Failed to fill field: {(f.label or f.name or f.field_id)}")
                 continue
 
     # 3) Leave browser open for manual review
