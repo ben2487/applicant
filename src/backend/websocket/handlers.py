@@ -1,6 +1,7 @@
 """WebSocket handlers for real-time communication."""
 
 import json
+import asyncio
 from typing import Any, Dict, Optional
 
 from flask_socketio import emit, join_room, leave_room
@@ -8,6 +9,7 @@ from flask_socketio import SocketIO
 
 from ..database.repository import RunRepository, RunEventRepository
 from ..models.entities import RunEvent, EventLevel, EventCategory
+from ..services.playwright_service import playwright_service
 
 
 class WebSocketManager:
@@ -63,25 +65,50 @@ class WebSocketManager:
         
         @self.socketio.on("control_run")
         def handle_control_run(data):
-            """Handle run control commands (pause, resume, cancel)."""
+            """Handle run control commands (pause, resume, stop)."""
             run_id = data.get("run_id")
-            action = data.get("action")
+            command = data.get("command")
             
-            if not run_id or not action:
-                emit("error", {"message": "run_id and action are required"})
+            if not run_id or not command:
+                emit("error", {"message": "run_id and command are required"})
                 return
             
             room = f"run_{run_id}"
             
-            # Emit control command to the run room
-            emit("run_control", {
-                "run_id": run_id,
-                "action": action,
-                "timestamp": self.socketio.server.manager.clock.time()
-            }, room=room)
-            
-            # Log the control event
-            self.log_control_event(run_id, action)
+            try:
+                # Handle commands with Playwright service
+                if command == 'pause':
+                    result = asyncio.run(playwright_service.pause_run(run_id))
+                elif command == 'resume':
+                    result = asyncio.run(playwright_service.resume_run(run_id))
+                elif command == 'stop':
+                    result = asyncio.run(playwright_service.stop_run(run_id))
+                else:
+                    result = {'status': 'error', 'message': 'Unknown command'}
+                
+                # Emit status update
+                self.emit_run_status(run_id, {
+                    'run_id': run_id,
+                    'status': result.get('status', 'UNKNOWN'),
+                    'message': result.get('message', ''),
+                    'timestamp': self.socketio.server.manager.clock.time()
+                })
+                
+                # Emit control acknowledgment
+                emit("control_acknowledged", {
+                    "run_id": run_id,
+                    "command": command,
+                    "status": "success"
+                }, room=room)
+                
+            except Exception as e:
+                print(f"Error handling control command: {e}")
+                emit("control_acknowledged", {
+                    "run_id": run_id,
+                    "command": command,
+                    "status": "error",
+                    "message": str(e)
+                }, room=room)
     
     def log_control_event(self, run_id: int, action: str):
         """Log a control event to the database."""

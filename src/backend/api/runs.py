@@ -1,5 +1,6 @@
 """Runs API blueprint."""
 
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -8,6 +9,8 @@ from pydantic import ValidationError
 
 from ..database.repository import RunRepository, RunEventRepository, ArtifactRepository
 from ..models.entities import Run, RunEvent, RunResultStatus
+from ..services.playwright_service import playwright_service
+from ..websocket.handlers import get_websocket_manager
 
 runs_bp = Blueprint("runs", __name__, url_prefix="/api/runs")
 
@@ -117,7 +120,7 @@ def create_run():
         # Create run object
         run_data = {
             "initial_url": data["initial_url"],
-            "headless": data.get("headless", True),
+            "headless": data.get("headless", False),  # Default to False for web interface
             "application_id": data.get("application_id"),
             "result_status": data.get("result_status", RunResultStatus.IN_PROGRESS),
             "summary": data.get("summary"),
@@ -126,6 +129,29 @@ def create_run():
         
         run = Run(**run_data)
         created_run = RunRepository.create(run)
+        
+        # Start Playwright automation
+        try:
+            result = asyncio.run(playwright_service.start_run(
+                created_run.id, 
+                created_run.initial_url, 
+                created_run.headless
+            ))
+            
+            # Emit WebSocket status update
+            ws_manager = get_websocket_manager()
+            ws_manager.emit_run_status(created_run.id, {
+                'run_id': created_run.id,
+                'status': result.get('status', 'IN_PROGRESS'),
+                'message': result.get('message', 'Run started'),
+                'timestamp': datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            print(f"Error starting Playwright automation: {e}")
+            # Update run status to failed
+            RunRepository.update_status(created_run.id, RunResultStatus.FAILED)
+            created_run.result_status = RunResultStatus.FAILED
         
         run_dict = created_run.dict()
         # Convert datetime objects to ISO format

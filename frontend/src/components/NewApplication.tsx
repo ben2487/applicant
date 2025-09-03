@@ -4,16 +4,25 @@ import { Play, Square, Pause, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { createRun, getRunEvents } from '@/lib/api';
-import { Run, RunEvent } from '@/types/api';
+import { createRun } from '@/lib/api';
+import { Run } from '@/types/api';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 export function NewApplication() {
   const [url, setUrl] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [currentRun, setCurrentRun] = useState<Run | null>(null);
-  const [logs, setLogs] = useState<RunEvent[]>([]);
-  const [browserFrame] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  
+  // WebSocket integration
+  const {
+    isConnected,
+    events,
+    screencastFrame,
+    consoleLogs,
+    sendControlCommand,
+    clearEvents,
+  } = useWebSocket(currentRun?.id);
 
   const scrollToBottom = () => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -21,23 +30,7 @@ export function NewApplication() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [logs]);
-
-  useEffect(() => {
-    if (!currentRun) return;
-
-    const pollEvents = async () => {
-      try {
-        const response = await getRunEvents(currentRun.id);
-        setLogs(response.events);
-      } catch (error) {
-        console.error('Failed to fetch events:', error);
-      }
-    };
-
-    const interval = setInterval(pollEvents, 1000);
-    return () => clearInterval(interval);
-  }, [currentRun]);
+  }, [events, consoleLogs]);
 
   const handleStartRun = async () => {
     if (!url.trim()) {
@@ -47,7 +40,7 @@ export function NewApplication() {
 
     try {
       setIsRunning(true);
-      setLogs([]);
+      clearEvents();
       
       const run = await createRun({
         initial_url: url,
@@ -55,9 +48,6 @@ export function NewApplication() {
       });
       
       setCurrentRun(run);
-      
-      // In a real implementation, this would connect to WebSocket for real-time updates
-      // For now, we'll simulate with polling
       
     } catch (error) {
       console.error('Failed to start run:', error);
@@ -67,9 +57,23 @@ export function NewApplication() {
   };
 
   const handleStopRun = () => {
+    if (currentRun) {
+      sendControlCommand('stop');
+    }
     setIsRunning(false);
     setCurrentRun(null);
-    // In a real implementation, this would send a stop signal to the backend
+  };
+
+  const handlePauseRun = () => {
+    if (currentRun) {
+      sendControlCommand('pause');
+    }
+  };
+
+  const handleResumeRun = () => {
+    if (currentRun) {
+      sendControlCommand('resume');
+    }
   };
 
   const getLogLevelColor = (level: string) => {
@@ -92,31 +96,39 @@ export function NewApplication() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex space-x-2">
-            <Input
-              placeholder="https://example.com/job-posting"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              disabled={isRunning}
-            />
-            <Button
-              onClick={handleStartRun}
-              disabled={isRunning || !url.trim()}
-              className="min-w-[100px]"
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Start
-            </Button>
-            {isRunning && (
+          <div className="flex items-center justify-between">
+            <div className="flex space-x-2 flex-1">
+              <Input
+                placeholder="https://example.com/job-posting"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                disabled={isRunning}
+              />
               <Button
-                variant="outline"
-                onClick={handleStopRun}
+                onClick={handleStartRun}
+                disabled={isRunning || !url.trim()}
                 className="min-w-[100px]"
               >
-                <Square className="h-4 w-4 mr-2" />
-                Stop
+                <Play className="h-4 w-4 mr-2" />
+                Start
               </Button>
-            )}
+              {isRunning && (
+                <Button
+                  variant="outline"
+                  onClick={handleStopRun}
+                  className="min-w-[100px]"
+                >
+                  <Square className="h-4 w-4 mr-2" />
+                  Stop
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <span className="text-sm text-gray-600">
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -129,10 +141,10 @@ export function NewApplication() {
               <CardTitle className="flex items-center justify-between">
                 Browser View
                 <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={handlePauseRun}>
                     <Pause className="h-4 w-4" />
                   </Button>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={handleResumeRun}>
                     <RotateCcw className="h-4 w-4" />
                   </Button>
                 </div>
@@ -140,8 +152,8 @@ export function NewApplication() {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg h-96 bg-gray-100 flex items-center justify-center">
-                {browserFrame ? (
-                  <img src={browserFrame} alt="Browser view" className="max-w-full max-h-full" />
+                {screencastFrame ? (
+                  <img src={`data:image/png;base64,${screencastFrame}`} alt="Browser view" className="max-w-full max-h-full" />
                 ) : (
                   <div className="text-gray-500">
                     Browser view will appear here when the automation starts
@@ -158,18 +170,29 @@ export function NewApplication() {
             </CardHeader>
             <CardContent>
               <div className="h-96 overflow-y-auto bg-black text-green-400 p-4 font-mono text-sm rounded">
-                {logs.length === 0 ? (
+                {events.length === 0 && consoleLogs.length === 0 ? (
                   <div className="text-gray-500">Waiting for logs...</div>
                 ) : (
-                  logs.map((event, index) => (
-                    <div key={index} className="mb-1">
-                      <span className="text-gray-500">[{new Date(event.ts).toLocaleTimeString()}]</span>
-                      <span className={`ml-2 ${getLogLevelColor(event.level)}`}>
-                        [{event.level}]
-                      </span>
-                      <span className="ml-2">{event.message}</span>
-                    </div>
-                  ))
+                  <>
+                    {events.map((event, index) => (
+                      <div key={`event-${index}`} className="mb-1">
+                        <span className="text-gray-500">[{new Date(event.ts).toLocaleTimeString()}]</span>
+                        <span className={`ml-2 ${getLogLevelColor(event.level)}`}>
+                          [{event.level}]
+                        </span>
+                        <span className="ml-2">{event.message}</span>
+                      </div>
+                    ))}
+                    {consoleLogs.map((log, index) => (
+                      <div key={`console-${index}`} className="mb-1">
+                        <span className="text-gray-500">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                        <span className={`ml-2 ${getLogLevelColor(log.level.toUpperCase())}`}>
+                          [{log.level.toUpperCase()}]
+                        </span>
+                        <span className="ml-2">{log.message}</span>
+                      </div>
+                    ))}
+                  </>
                 )}
                 <div ref={logsEndRef} />
               </div>

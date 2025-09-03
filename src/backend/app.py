@@ -10,6 +10,7 @@ from .database.connection import db_manager
 from .api.runs import runs_bp
 from .api.users import users_bp
 from .websocket.handlers import init_websocket_manager
+from .services.playwright_service import playwright_service
 
 
 def create_app(test_config=None):
@@ -55,9 +56,26 @@ def create_app(test_config=None):
         except Exception as e:
             print(f"Failed to initialize database: {e}")
             raise
+
+    # Initialize Playwright service
+    try:
+        import asyncio
+        asyncio.run(playwright_service.initialize())
+        print("Playwright service initialized")
+    except Exception as e:
+        print(f"Failed to initialize Playwright service: {e}")
+        # Don't raise here as the app can still work without Playwright
     
     # Note: We don't close the connection pool on each request teardown
     # The pool will be closed when the application shuts down
+    
+    # Cleanup on app shutdown
+    @app.teardown_appcontext
+    def cleanup_services(error):
+        """Cleanup services on app shutdown."""
+        if error:
+            print(f"Application error: {error}")
+        # Playwright cleanup will be handled by the service itself
     
     return app
 
