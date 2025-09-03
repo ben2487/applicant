@@ -1,6 +1,21 @@
 # WebBot - Intelligent Job Application Assistant
 
-A Python browser automation tool using Playwright and OpenAI, designed to intelligently analyze job postings and find direct application URLs using agentic AI.
+A Python browser automation tool using Playwright and OpenAI, designed to intelligently analyze job postings and find direct application URLs using agentic AI. Now with a modern React frontend and Flask backend for enhanced monitoring and control.
+
+## Features
+
+- **Chrome Profile Management**: Discover and list Chrome browser profiles with human-readable names and email identifiers
+- **User Profile System**: Manage user-specific data including secrets, job tracking, and resume cache
+- **Smart Browser Launch**: Automatically attach to existing Chrome instances or launch new ones with profiles
+- **Structured Job Analysis**: Extract job details including title, company, requirements, work mode, locations, and compensation
+- **Agentic AI Apply Discovery**: Use OpenAI function-calling to intelligently find official company apply URLs
+- **Dual Extraction Modes**: LLM-enhanced extraction (default) or fast heuristic-only mode
+- **Domain Filtering**: Maintain a do-not-apply domain list for job aggregation sites
+- **Comparison Output**: Compare agentic AI vs. legacy heuristic approaches
+- **CLI Interface**: Easy-to-use Typer-based command line interface
+- **Web Interface**: Modern React frontend with real-time monitoring
+- **Backend API**: Flask REST API with PostgreSQL database
+- **Testing**: Comprehensive test suite with pytest
 
 ## Features
 
@@ -25,7 +40,44 @@ A Python browser automation tool using Playwright and OpenAI, designed to intell
 
 ## Quick Start
 
-### 1. Clone and Setup
+### Web Interface (Recommended)
+
+The easiest way to use WebBot is through the modern web interface:
+
+1. **Start the Backend**:
+```bash
+# Install dependencies
+poetry install
+
+# Start PostgreSQL
+make db-up
+make db-wait
+make db-reset
+
+# Start Flask backend
+DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=False)" &
+```
+
+2. **Start the Frontend**:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+3. **Access the Application**:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+
+The web interface provides:
+- **Applications Table**: View all automation runs with sorting and filtering
+- **New Application**: Start new runs with URL input and live monitoring
+- **Real-time Logs**: Live console output during automation
+- **Embedded Browser**: Browser view during automation (planned)
+
+### Command Line Interface
+
+For advanced users or automation scripts:
 
 ```bash
 git clone <repository-url>
@@ -118,23 +170,53 @@ applicant/
 │   └── [UserName]/
 │       └── secrets.json      # User secrets (Google Drive, etc.)
 ├── src/
-│   └── webbot/
-│       ├── __init__.py        # Package initialization
-│       ├── cli.py             # Command line interface
-│       ├── browser_profiles.py # Chrome browser profile discovery
-│       ├── user_profiles.py   # User profile management
-│       ├── browser.py         # Browser launch and management
-│       ├── extract.py         # Text extraction utilities
-│       ├── struct_extract.py  # Structured job data extraction
-│       ├── apply_finder.py    # Legacy apply URL discovery
-│       ├── ai_search.py       # OpenAI client and search utilities
-│       ├── agents/
-│       │   ├── __init__.py    # Agents package
-│       │   └── find_apply_page.py  # Agentic apply URL discovery
-│       └── config.py          # Configuration and environment
+│   ├── webbot/               # Original CLI automation package
+│   │   ├── __init__.py        # Package initialization
+│   │   ├── cli.py             # Command line interface
+│   │   ├── browser_profiles.py # Chrome browser profile discovery
+│   │   ├── user_profiles.py   # User profile management
+│   │   ├── browser.py         # Browser launch and management
+│   │   ├── extract.py         # Text extraction utilities
+│   │   ├── struct_extract.py  # Structured job data extraction
+│   │   ├── apply_finder.py    # Legacy apply URL discovery
+│   │   ├── ai_search.py       # OpenAI client and search utilities
+│   │   ├── agents/
+│   │   │   ├── __init__.py    # Agents package
+│   │   │   └── find_apply_page.py  # Agentic apply URL discovery
+│   │   └── config.py          # Configuration and environment
+│   └── backend/              # Flask backend API
+│       ├── __init__.py        # Backend package
+│       ├── app.py             # Flask application factory
+│       ├── database/          # Database layer
+│       │   ├── connection.py  # PostgreSQL connection management
+│       │   ├── repository.py  # Data access layer
+│       │   └── schema.sql     # Database schema
+│       ├── models/            # Pydantic data models
+│       │   └── entities.py    # Database entity models
+│       ├── api/               # REST API endpoints
+│       │   ├── runs.py        # Run management API
+│       │   └── users.py       # User management API
+│       └── websocket/         # WebSocket handlers (planned)
+│           └── handlers.py    # Real-time communication
+├── frontend/                 # React frontend application
+│   ├── src/
+│   │   ├── components/        # React components
+│   │   │   ├── ui/           # shadcn/ui components
+│   │   │   ├── RunTable.tsx   # Applications table
+│   │   │   └── NewApplication.tsx # New run form
+│   │   ├── lib/              # Utilities and API client
+│   │   │   ├── api.ts        # Backend API client
+│   │   │   └── utils.ts      # Utility functions
+│   │   ├── types/            # TypeScript type definitions
+│   │   │   └── api.ts        # API response types
+│   │   ├── App.tsx           # Main application component
+│   │   └── main.tsx          # Application entry point
+│   ├── package.json          # Node.js dependencies
+│   └── vite.config.ts        # Vite configuration
 ├── tests/
 │   ├── test_profiles.py       # Profile discovery tests
-│   └── test_cli_smoke.py     # CLI smoke tests
+│   ├── test_cli_smoke.py     # CLI smoke tests
+│   └── test_backend.py       # Backend API tests
 ├── .env.example               # Environment variables template
 ├── pyproject.toml             # Poetry configuration
 ├── Makefile                   # Build automation

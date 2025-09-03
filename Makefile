@@ -1,4 +1,4 @@
-.PHONY: setup test lint fmt run list list-browser list-user test-ai help db-up db-wait db-reset clean-traces dev backend-test
+.PHONY: setup test lint fmt run list list-browser list-user test-ai help db-up db-wait db-reset clean-traces dev backend-test frontend frontend-install frontend-build web
 
 # Default target
 help:
@@ -15,7 +15,11 @@ help:
 	@echo "  db-wait        - Wait for database to be ready"
 	@echo "  db-reset       - Reset database (drop/create + schema)"
 	@echo "  clean-traces   - Clean trace files"
-	@echo "  dev            - Start development server (backend + frontend)"
+	@echo "  dev            - Start Flask development server"
+	@echo "  frontend       - Start React frontend development server"
+	@echo "  frontend-install - Install frontend dependencies"
+	@echo "  frontend-build - Build frontend for production"
+	@echo "  web            - Start both backend and frontend servers"
 	@echo "  backend-test   - Run backend tests"
 	@echo "  help           - Show this help message"
 
@@ -114,13 +118,26 @@ clean-traces:
 
 # Development server
 dev:
-	@echo "Starting development server..."
-	@echo "Backend will be available at http://localhost:8000"
-	@echo "Frontend will be available at http://localhost:3000"
-	@echo ""
-	@echo "Starting backend..."
-	cd src/backend && poetry run python -m flask --app app:create_app run --host=0.0.0.0 --port=8000 --debug &
-	@echo "Backend started!"
-	@echo ""
-	@echo "To open in browser, run: open http://localhost:8000"
+	@echo "Starting Flask development server..."
+	DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=True)"
+
+# Frontend development server
+frontend:
+	@echo "Starting React frontend development server..."
+	cd frontend && npm run dev
+
+# Install frontend dependencies
+frontend-install:
+	@echo "Installing frontend dependencies..."
+	cd frontend && npm install
+
+# Build frontend for production
+frontend-build:
+	@echo "Building frontend for production..."
+	cd frontend && npm run build
+
+# Start both backend and frontend servers
+web: frontend-install
+	@echo "Starting WebBot web interface..."
+	./start-servers.sh
 
