@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from ..ai_search import get_openai_client
 from ..apply_finder import duckduckgo_html_search, domain
 from playwright.async_api import Page
+from ..tracing import action, json_blob
 
 
 class AgentPick(BaseModel):
@@ -35,10 +36,12 @@ async def smart_find_apply_url(
     candidates: List[str] = []
     for q in queries:
         try:
-            results = await duckduckgo_html_search(page, q, limit=10)
-            for url in results:
-                if url not in candidates:
-                    candidates.append(url)
+            with action("duckduckgo_query", category="FIND_APPLY", query=q):
+                results = await duckduckgo_html_search(page, q, limit=10)
+                json_blob("FIND_APPLY", "TRACE", "duckduckgo_results", {"query": q, "results": results})
+                for url in results:
+                    if url not in candidates:
+                        candidates.append(url)
         except Exception:
             continue
 
@@ -65,6 +68,7 @@ async def smart_find_apply_url(
         {"role": "user", "content": prompt},
     ]
 
+    json_blob("LLM", "DEBUG", "find_apply_prompt", {"messages": messages})
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         response_format={"type": "json_object"},
@@ -81,6 +85,7 @@ async def smart_find_apply_url(
         data = json.loads(raw_content)
     except Exception:
         data = {}
+    json_blob("LLM", "DEBUG", "find_apply_response", {"response": raw_content})
     pick = AgentPick.model_validate(data)
 
     trace = {

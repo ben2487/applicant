@@ -27,10 +27,13 @@ from .apply_finder import (
 )
 from .ai_search import get_openai_client, OpenAIConfigError
 from .agents.find_apply_page import smart_find_apply_url
+from .agents.find_apply_page_gpt5 import agentic5_find_apply_url
+from .agents.find_apply_page_gpt5beta import agentic5beta_find_apply_url
 from .struct_extract import parse_job_page, AIMode, JobPostingExtract
 from .google_drive import google_drive_login, refresh_resumes
 from .resume_alignment import run_alignment_for_files, select_best_resume_for_job_description
 from .config import repo_root
+from .tracing import init_tracing, action, event, json_blob, image, generate_html_report, enable_console_capture
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -442,6 +445,17 @@ def apply_flow(
     ignore_optional: bool = typer.Option(True, "--ignore-optional/--no-ignore-optional"),
     model: str = typer.Option("gpt-4o", "--model", help="Model for answer generation and resume selection"),
     hold_seconds: int = typer.Option(45, "--hold-seconds", help="Seconds to keep browser open for manual review"),
+    trace_html: Optional[Path] = typer.Option(
+        None,
+        "--trace-html",
+        help="Write a self-contained HTML trace report to this path (defaults to .trace/report-<ts>.html)",
+    ),
+    vvvv: bool = typer.Option(False, "--vvvv", help="Enable maximum verbose TRACE logging"),
+    apply_url_mode: str = typer.Option(
+        "agentic5beta",
+        "--apply-url-mode",
+        help="Which strategy to use: agentic5beta (default), agentic5, agentic, legacy, or compare",
+    ),
 ):
     """
     End-to-end application flow in one command:
@@ -456,6 +470,25 @@ def apply_flow(
     browser_profile = _resolve_browser_profile(use_browser_profile)
     user_profile_obj = _resolve_user_profile(user_profile)
 
+    # Initialize tracing
+    import time as _t
+    ts = _t.strftime("%Y%m%d-%H%M%S")
+    trace_dir = repo_root() / ".trace"
+    log_path = trace_dir / f"apply-{ts}.jsonl"
+    level = "TRACE" if vvvv else "DEBUG"
+    init_tracing(
+        run_name="apply-flow",
+        log_path=log_path,
+        min_level=level,
+        llm_log_raw=True,
+        common_fields={
+            "user_profile": user_profile_obj.name,
+            "browser_profile": browser_profile.name,
+        },
+    )
+    enable_console_capture()
+    event("RUN", "INFO", "apply_flow_start", url=initial_job_url, headless=headless, model=model)
+
     async def _heuristic_click_apply(page):
         import re as _re
         # Try role=button/link with accessible name containing 'apply'
@@ -465,6 +498,11 @@ def apply_flow(
                 if await loc.count() > 0:
                     await loc.first.scroll_into_view_if_needed()
                     await loc.first.click()
+                    try:
+                        png = await page.screenshot(full_page=False)
+                        image("BROWSER", "DEBUG", "after_heuristic_apply_click", png)
+                    except Exception:
+                        pass
                     return True
             except Exception:
                 pass
@@ -474,6 +512,11 @@ def apply_flow(
             if await loc.count() > 0:
                 await loc.first.scroll_into_view_if_needed()
                 await loc.first.click()
+                try:
+                    png = await page.screenshot(full_page=False)
+                    image("BROWSER", "DEBUG", "after_heuristic_apply_click", png)
+                except Exception:
+                    pass
                 return True
         except Exception:
             pass
@@ -482,7 +525,13 @@ def apply_flow(
     async def main():
         ctx, page = await smart_launch_with_profile(browser_profile, headless=headless)
         try:
-            await goto_and_wait(page, initial_job_url)
+            with action("navigate_initial", category="BROWSER", url=initial_job_url):
+                await goto_and_wait(page, initial_job_url)
+                try:
+                    png = await page.screenshot(full_page=False)
+                    image("BROWSER", "DEBUG", "initial_view", png)
+                except Exception:
+                    pass
             try:
                 await page.wait_for_load_state(state="networkidle", timeout=20000)
             except Exception:
@@ -496,59 +545,168 @@ def apply_flow(
 
             # Structured extract for company/title
             try:
-                extract = await parse_job_page(page, mode=AIMode.OPEN_AI)
-                _pretty_print_extract(extract)
+                with action("parse_job_page", category="EXTRACT", mode=str(AIMode.OPEN_AI)):
+                    extract = await parse_job_page(page, mode=AIMode.OPEN_AI)
+                    _pretty_print_extract(extract)
             except OpenAIConfigError:
-                extract = await parse_job_page(page, mode=AIMode.LLM_OFF)
-                _pretty_print_extract(extract)
+                with action("parse_job_page", category="EXTRACT", mode=str(AIMode.LLM_OFF)):
+                    extract = await parse_job_page(page, mode=AIMode.LLM_OFF)
+                    _pretty_print_extract(extract)
             except Exception:
                 extract = None
 
             company_name = (extract.company_name if extract else None) or "Unknown Company"
             job_title = (extract.title if extract else None) or (await page.title() or "Unknown Role")
 
-            # Find apply URL using both methods (agentic vs legacy) and compare
+            # Create job description summary for agentic5
+            job_description_summary = ""
+            if extract:
+                if extract.title:
+                    job_description_summary += f"Title: {extract.title}\n"
+                if extract.company_name:
+                    job_description_summary += f"Company: {extract.company_name}\n"
+                if extract.requirements:
+                    job_description_summary += f"Requirements: {'; '.join(extract.requirements[:5])}\n"
+                if extract.locations:
+                    job_description_summary += f"Locations: {', '.join(extract.locations)}\n"
+            if not job_description_summary:
+                job_description_summary = f"Job posting for {company_name} - {job_title}"
+
+            # Find apply URL using selected mode
             agentic_url = None
             legacy_url = None
+            agentic5_url = None
+            agentic_trace = {}
+            agentic5_trace = {}
+
+            dna = load_do_not_apply_domains() | {"ycombinator.com", "workatastartup.com"}
+
+            if apply_url_mode in {"agentic5", "compare"}:
+                try:
+                    typer.echo("\n🤖 Using agentic AI - GPT5 agent mode to find apply URL...")
+                    with action("find_apply_agentic5", category="FIND_APPLY", company=company_name, title=job_title):
+                        agentic5_url, agentic5_trace = await agentic5_find_apply_url(
+                            job_url=initial_job_url,
+                            job_description_summary=job_description_summary,
+                            do_not_apply_domains=list(dna),
+                            page=page,
+                            max_rounds=3,
+                        )
+                    json_blob("LLM", "DEBUG", "agentic5_rounds", agentic5_trace.get("rounds", []))
+                    json_blob("LLM", "DEBUG", "agentic5_final", {
+                        "picks": agentic5_trace.get("picks"),
+                        "final": agentic5_trace.get("final"),
+                    })
+                    if agentic5_url:
+                        typer.echo(f"✅ Agentic5 found apply URL: {agentic5_url}")
+                    else:
+                        typer.echo("❌ Agentic5 found no apply URL")
+                except Exception as e:
+                    typer.echo(f"❌ Agentic5 approach failed: {e}")
+                    event("FIND_APPLY", "INFO", "agentic5_failed", error=str(e))
+
+            if apply_url_mode in {"agentic5beta", "compare"}:
+                try:
+                    typer.echo("\n🤖 Using agentic AI - GPT5 beta (Assistants web tool) to find apply URL...")
+                    with action("find_apply_agentic5beta", category="FIND_APPLY", company=company_name, title=job_title):
+                        # Provide distilled fragments from the extracted posting to help matching
+                        distilled = []
+                        try:
+                            if extract and extract.requirements:
+                                distilled = [req for req in extract.requirements[:6]]
+                        except Exception:
+                            distilled = []
+                        agentic5b_url, agentic5b_trace = await agentic5beta_find_apply_url(
+                            company_name=company_name,
+                            job_title=job_title,
+                            extra_keywords=["ATS", "Ashby", "Greenhouse", "Lever"],
+                            disallowed_domains=list(dna),
+                            distilled_fragments=distilled,
+                            model="gpt-4.1",
+                        )
+                    json_blob("LLM", "DEBUG", "agentic5beta_picks", agentic5b_trace.get("picks"))
+                    if agentic5b_url:
+                        typer.echo(f"✅ Agentic5beta found apply URL: {agentic5b_url}")
+                    else:
+                        typer.echo("❌ Agentic5beta found no apply URL")
+                except Exception as e:
+                    typer.echo(f"❌ Agentic5beta approach failed: {e}")
+                    event("FIND_APPLY", "INFO", "agentic5beta_failed", error=str(e))
+
+            if apply_url_mode in {"agentic", "compare"}:
+                try:
+                    typer.echo("\n🤖 Using agentic AI approach to find apply URL...")
+                    with action("find_apply_agentic", category="FIND_APPLY", company=company_name, title=job_title):
+                        agentic_url, agentic_trace = await smart_find_apply_url(page, company_name=company_name, job_title=job_title)
+                        json_blob("LLM", "DEBUG", "agentic_prompt", {"prompt": agentic_trace.get("prompt")})
+                        json_blob("LLM", "DEBUG", "agentic_response", {"response": agentic_trace.get("response")})
+                    if agentic_url:
+                        typer.echo(f"✅ Agentic AI found apply URL: {agentic_url}")
+                    else:
+                        typer.echo("❌ Agentic AI found no apply URL")
+                except Exception as e:
+                    typer.echo(f"❌ Agentic AI approach failed: {e}")
+                    event("FIND_APPLY", "INFO", "agentic_failed", error=str(e))
+
+            if apply_url_mode in {"legacy", "compare"}:
+                try:
+                    typer.echo("\n🔍 Using legacy heuristic DuckDuckGo approach...")
+                    with action("find_apply_legacy", category="FIND_APPLY", company=company_name, title=job_title):
+                        company_home = await find_company_homepage_from_job_page(page)
+                        title_txt = (await page.title()) or ""
+                        company_dom = domain(company_home) if company_home else None
+                        legacy_url = await find_apply_url(page, company_name, title_txt, company_dom)
+                    if legacy_url:
+                        typer.echo(f"✅ Legacy approach found apply URL: {legacy_url}")
+                    else:
+                        typer.echo("❌ Legacy approach found no apply URL")
+                except Exception as e:
+                    typer.echo(f"❌ Legacy approach failed: {e}")
+                    event("FIND_APPLY", "INFO", "legacy_failed", error=str(e))
+
+            # Comparison output if relevant
+            if apply_url_mode == "compare":
+                typer.echo("\n" + "🔄"*20 + " COMPARISON " + "🔄"*20)
+                typer.echo(f"Agentic5:   {agentic5_url or 'None'}")
+                typer.echo(f"Agentic AI: {agentic_url or 'None'}")
+                typer.echo(f"Legacy:     {legacy_url or 'None'}")
+
+            # Choose based on mode
+            if apply_url_mode == "agentic5":
+                chosen_apply_url = agentic5_url or agentic_url or legacy_url
+            elif apply_url_mode == "agentic5beta":
+                chosen_apply_url = locals().get("agentic5b_url") or agentic5_url or agentic_url or legacy_url
+            elif apply_url_mode == "agentic":
+                chosen_apply_url = agentic_url or agentic5_url or legacy_url
+            elif apply_url_mode == "legacy":
+                chosen_apply_url = legacy_url or agentic5_url or agentic_url
+            else:  # compare
+                chosen_apply_url = locals().get("agentic5b_url") or agentic5_url or agentic_url or legacy_url
+
+            # Print final picks to console for visibility
             try:
-                typer.echo("\n🤖 Using agentic AI approach to find apply URL...")
-                agentic_url, agentic_trace = await smart_find_apply_url(page, company_name=company_name, job_title=job_title)
-                typer.echo("\n" + "🔵"*20 + " AGENTIC AI PROMPT " + "🔵"*20)
-                typer.echo(agentic_trace.get("prompt") or "")
-                typer.echo("\n" + "🟢"*20 + " AGENTIC AI RESPONSE " + "🟢"*20)
-                typer.echo(agentic_trace.get("response") or "")
-                typer.echo("\n" + "🟡"*20 + " AGENTIC AI PICKS " + "🟡"*20)
-                for k, v in (agentic_trace.get("picks") or {}).items():
-                    typer.echo(f"  {k}: {v}")
-                if agentic_url:
-                    typer.echo(f"\n✅ Agentic AI found apply URL: {agentic_url}")
-                else:
-                    typer.echo("\n❌ Agentic AI found no apply URL")
-            except Exception as e:
-                typer.echo(f"❌ Agentic AI approach failed: {e}")
-
-            try:
-                typer.echo("\n🔍 Using legacy heuristic DuckDuckGo approach...")
-                company_home = await find_company_homepage_from_job_page(page)
-                title_txt = (await page.title()) or ""
-                company_dom = domain(company_home) if company_home else None
-                legacy_url = await find_apply_url(page, company_name, title_txt, company_dom)
-                if legacy_url:
-                    typer.echo(f"✅ Legacy approach found apply URL: {legacy_url}")
-                else:
-                    typer.echo("❌ Legacy approach found no apply URL")
-            except Exception as e:
-                typer.echo(f"❌ Legacy approach failed: {e}")
-
-            typer.echo("\n" + "🔄"*20 + " COMPARISON " + "🔄"*20)
-            typer.echo(f"Agentic AI:  {agentic_url or 'None'}")
-            typer.echo(f"Legacy:      {legacy_url or 'None'}")
-
-            chosen_apply_url = agentic_url or legacy_url
+                if agentic5_url or agentic_url or legacy_url:
+                    typer.echo("\n" + "📌"*10 + " FINAL APPLY CANDIDATES " + "📌"*10)
+                    if agentic5_url:
+                        typer.echo(f"agentic5:   {agentic5_url}")
+                    if apply_url_mode in {"agentic5beta", "compare"} and 'agentic5b_url' in locals():
+                        typer.echo(f"agentic5beta: {locals().get('agentic5b_url')}")
+                    if agentic_url:
+                        typer.echo(f"agentic:    {agentic_url}")
+                    if legacy_url:
+                        typer.echo(f"legacy:     {legacy_url}")
+            except Exception:
+                pass
 
             # Navigate to the application form
             if chosen_apply_url:
-                await goto_and_wait(page, chosen_apply_url)
+                with action("navigate_apply", category="BROWSER", url=chosen_apply_url):
+                    await goto_and_wait(page, chosen_apply_url)
+                    try:
+                        png2 = await page.screenshot(full_page=False)
+                        image("BROWSER", "DEBUG", "apply_candidate_view", png2)
+                    except Exception:
+                        pass
                 try:
                     await page.wait_for_load_state(state="networkidle", timeout=20000)
                 except Exception:
@@ -562,8 +720,41 @@ def apply_flow(
                 except Exception:
                     pass
 
-            # Extract form schema from the live form page
-            schema = await extract_form_schema_from_page(page, url=page.url)
+            # Extract form schema from the live form page; if none found, attempt to click the in-page Apply button/tab, then retry once
+            with action("extract_form_schema", category="FORM", url=page.url):
+                schema = await extract_form_schema_from_page(page, url=page.url)
+            if not schema.validity.is_valid_job_application_form:
+                typer.echo("[apply-flow] No clear form found; attempting in-page 'Apply for this Job' click and retry...")
+                event("FORM", "INFO", "no_form_first_pass")
+                try:
+                    # Common Ashby pattern: button text near bottom
+                    import re as _re
+                    btn = page.get_by_role("button", name=_re.compile(r"apply\s+for\s+this\s+job", _re.I))
+                    if await btn.count() == 0:
+                        # try text-matches locator
+                        btn = page.locator(":text-matches('Apply for this Job', 'i')")
+                    if await btn.count() > 0:
+                        await btn.first.scroll_into_view_if_needed()
+                        await btn.first.click()
+                        try:
+                            await page.wait_for_load_state(state="networkidle", timeout=20000)
+                        except Exception:
+                            pass
+                        try:
+                            png3 = await page.screenshot(full_page=False)
+                            image("BROWSER", "DEBUG", "after_click_apply_for_this_job", png3)
+                        except Exception:
+                            pass
+                except Exception as _e:
+                    event("FORM", "DEBUG", "apply_button_click_failed", error=str(_e))
+                # Retry extract once
+                with action("extract_form_schema_retry", category="FORM", url=page.url):
+                    schema = await extract_form_schema_from_page(page, url=page.url)
+                if not schema.validity.is_valid_job_application_form:
+                    msg = "No job application form detected after retry; aborting fill."
+                    typer.echo(f"❌ {msg}")
+                    event("FORM", "INFO", "no_form_after_retry_abort")
+                    return
             typer.echo("[apply-flow] Extracted schema; selecting best resume and generating answers...")
 
             # Select best resume for this job using live job description text
@@ -575,6 +766,8 @@ def apply_flow(
                 typer.echo(align_trace.get("prompt") or "")
                 typer.echo("\n" + "🟢"*20 + " RESUME ALIGNMENT RESPONSE " + "🟢"*20)
                 typer.echo(align_trace.get("response") or "")
+                json_blob("LLM", "DEBUG", "resume_alignment_prompt", {"prompt": align_trace.get("prompt")})
+                json_blob("LLM", "DEBUG", "resume_alignment_response", {"response": align_trace.get("response")})
                 chosen_resume_id = alignment.chosen_resume_id
             except Exception as e:
                 typer.echo(f"⚠️ Resume alignment failed: {e}. Proceeding with best available resume text.")
@@ -616,22 +809,28 @@ def apply_flow(
                     chosen_resume_txt = ""
 
             # Generate answers with resume + context
-            answered_schema = generate_answers(
-                schema,
-                resume_text=chosen_resume_txt,
-                job_context=f"URL: {page.url}",
-                ignore_optional=ignore_optional,
-                model=model,
-            )
+            try:
+                with action("generate_answers", category="LLM", model=model):
+                    answered_schema = generate_answers(
+                        schema,
+                        resume_text=chosen_resume_txt,
+                        job_context=f"URL: {page.url}",
+                        ignore_optional=ignore_optional,
+                        model=model,
+                    )
+            except Exception as e:
+                event("LLM", "INFO", "generate_answers_failed", error=str(e))
+                answered_schema = schema
 
             # Execute fill plan (no submit)
-            await execute_fill_plan(
-                page,
-                answered_schema,
-                user_profile_obj.path,
-                wait_seconds=hold_seconds,
-                preferred_resume_pdf=preferred_pdf_path,
-            )
+            with action("execute_fill_plan", category="FORM", hold_seconds=hold_seconds):
+                await execute_fill_plan(
+                    page,
+                    answered_schema,
+                    user_profile_obj.path,
+                    wait_seconds=hold_seconds,
+                    preferred_resume_pdf=preferred_pdf_path,
+                )
 
         finally:
             if hasattr(page, '_playwright'):
@@ -640,6 +839,15 @@ def apply_flow(
                 await ctx.close()
 
     asyncio.run(main())
+
+    # Generate HTML report
+    try:
+        out_path = trace_html or (repo_root() / ".trace" / f"report-{ts}.html")
+        generate_html_report(log_path, out_path)
+        typer.echo(f"📝 Trace report: {out_path}")
+    except Exception as e:
+        typer.echo(f"⚠️ Failed to generate trace HTML: {e}")
+
 
 @app.command("snapshot-url")
 def snapshot_url(

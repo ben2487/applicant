@@ -1,0 +1,65 @@
+Implemented LLM answerer and wired CLI to run against snapshots and fixtures. Now I’ll summarize the key questions and LLM outputs for sanity-checking.
+
+
+New pieces added
+Added LLM module to populate answers in FormSchema:
+src/webbot/forms/answerer.py with generate_answers(schema, resume_text, job_context, ignore_optional=True, model="gpt-4o").
+CLI commands:
+answer-form-from-snapshot: extract from a snapshot, LLM-generate answers, print Q&A.
+answer-realworld-fixtures: iterate tests/fixtures/realworld/*/{initial,after_apply}, LLM-generate answers, print Q&A.
+How it uses existing components
+Uses resume selection flow and OpenAI config; reuses resumes.json or falls back to concatenated resume.txt files for user_ben.
+Answers are injected into FormField.meta["answer"], which executor.execute_fill_plan already expects.
+Key questions and LLM responses (from fixtures)
+ashby-infisical-jd (after_apply; Ashby)
+Name → Ben Mowery
+Email → bmowery@cs.stanford.edu
+LinkedIn URL → https://linkedin.com/in/benmowery
+GitHub/GitLab URL → https://github.com/bmowery
+Role selection (e.g., Full Stack Engineer) → true
+Skills checkboxes (JS/TS/Go/Python/C++/Java/React/Next.js/DBs/K8s/Docker/Terraform/AWS/GCP/Azure) → true
+“Please add up to three bullets showing exceptional ability” → three concise bullets summarizing achievements
+ashby-optery (after_apply; Ashby on company domain)
+Name → Ben Mowery
+Email → bmowery@cs.stanford.edu
+LinkedIn Profile URL → https://linkedin.com/in/benmowery
+Phone Number → +1 (949) 232-6551
+greenhouse-thalamus (Greenhouse)
+First Name* → Ben
+Last Name* → Mowery
+Email* → bmowery@cs.stanford.edu
+Phone* → +1 (949) 232-6551
+LinkedIn Profile* → https://linkedin.com/in/benmowery
+“Can you describe your experience with Angular and Node.js?” → brief experience summary
+“Will you now or in the future require sponsorship …?” → false
+
+lever-curri-apply (Lever)
+Full name → Ben Mowery
+Email → bmowery@cs.stanford.edu
+Phone → +1 (949) 232-6551
+Current location → Menlo Park, CA
+lever-curri-jd (Lever after clicking Apply)
+Full name → Ben Mowery
+Email → bmowery@cs.stanford.edu
+Phone → +1 (949) 232-6551
+Current location → Irvine, CA
+vercel-ai-engineer (non-ATS/custom)
+First Name → Ben
+Last Name → Mowery
+Email Address → bmowery@cs.stanford.edu
+Phone Number → +1 (949) 232-6551
+“Canada” (radio) → true
+“I have reviewed and confirmed …” (radio) → true
+Notes:
+Some fixtures show duplicated Q&A entries because both initial and after_apply pages were extracted and printed; that’s expected for this sweep.
+Optional fields were mostly skipped due to the --ignore-optional default; required and trivially-known fields were filled.
+The Ashby “bullets” textarea is populated with concrete example achievements for sanity testing.
+How to run locally
+Answer a specific snapshot and print Q&A:
+python -m src.webbot.cli answer-form-from-snapshot tests/fixtures/realworld/ashby-infisical-jd/after_apply --user-profile user_ben
+Sweep all realworld fixtures:
+python -m src.webbot.cli answer-realworld-fixtures --user-profile user_ben
+To dry-run end-to-end on a live form and pause 60s for review, combine with execute-form-url:
+Extract + answer via LLM is currently in snapshot commands; to live-fill, we’ll add a flag to execute-form-url that calls generate_answers instead of demo stubs. Say the word and I’ll wire that next.
+If you want me to fetch additional DOM snapshots from the URLs in prompts/form_parser.txt, I can run the snapshot command against those URLs and then re-run the answerer over the new artifacts without submitting.
+All tasks in the plan are complete, and answers are printed per fixture for sanity review.

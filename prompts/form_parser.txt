@@ -1,0 +1,138 @@
+High-level goal: given a selected resume, fill out a job application form using playwright
+
+For the purposes of this conversation, we only want to implement a form schema extractor: given a HTML page loaded in playwright,
+let's extract a JSON blob describing each input, whether or not it's optional, the label text, and the information we need to point a 
+playwright bot at the form to type in our answer. Or in the case of the file upload button, enough information to get playwright to
+upload the chosen resume. 
+
+Please first read the source files related to following the initial URL given on the command line and finding the "applyable" job posting page.
+
+Once we have that page loaded, let's process the DOM into a form that we can get a LLM to fill out for us, then use Playwright to enter the responses and updload the selected resume PDF.
+
+Please add a command line option --fill-out-application-form that takes a URL, loads the URL in playwright, and then does the DOM parsing 
+to extract the JSON structure. Please print the prettified JSON result to the console for debugging when complete. 
+
+Here are some implementation notes that may be helpful, but they are only suggestions -- feel free to do it differently.
+
+Form Schema Extractor (DOM → JSON)
+
+Scans the page for inputs (input, textarea, select, role="combobox", contenteditable, shadow DOM, and iframes).
+
+Builds a normalized JSON schema with field_id, name, label, placeholder, aria/role, type, required, options, section, validation hints.
+
+De-duplicates “visual” vs “hidden” inputs; resolves labels by for, aria-labelledby, and nearest-label heuristics.
+
+
+
+ATS Heuristics (optional but helpful)
+
+  - Lightweight detector that tags the page (ats="greenhouse" | "lever" | "workday" | "ashby" | "taleo" | "custom"), based on:
+  - meta tags, script src domains, CSS class patterns, and URL paths.
+  - Enables small, ATS-specific tweaks (e.g., Workday’s iframes; Greenhouse “autofill from resume” button; Lever’s multi-step flow).
+
+  ==> Please put this in an identified_ATS field in the JSON result. null if we can't identify a specific ATS
+
+
+We can parse the page into something like this FormSchema below, but I think we should also keep links/handles/pointers to the matched DOM inputs so playwright knows what to fill in.
+We also need to note which fields are upload buttons and/or drag & drop targets since on almost all pages we will need to upload a file.
+Let's also add an "is_valid_job_application_form" field that is set to true or false with a confidence level. After parsing the form,
+run some heuristic checks and see if it has common fields we'd expect in a job application. If it's set to false, the calling module
+will know we have a page with a form, but it's probably not a job application and it should stop. 
+
+// FormSchema (page → JSON)
+{
+  "url": "https://careers.example.com/apply/...",
+  "ats": "greenhouse",
+  "sections": [
+    {
+      "title": "Personal Information",
+      "fields": [
+        {
+          "field_id": "first_name",
+          "name": "applicant[first_name]",
+          "label": "First Name",
+          "placeholder": "",
+          "type": "text",
+          "required": true,
+          "options": [],
+          "locators": {
+            "css": "#first_name",
+            "xpath": "//input[@id='first_name']"
+          },
+          "meta": { "ariaLabel": "First Name", "maxlength": 60 }
+        }
+      ]
+    }
+  ]
+}
+
+The FillPlan below can be one and the same with the FormSchema. Just merge in the field_id (playwright handle/id/whatever) with the 
+form fields. We'll pass the structure to the LLM which will fill it out, mutating the input structure. 
+
+// FillPlan (LLM output → Executor)
+{
+  "decisions": [
+    {
+      "field_id": "first_name",
+      "value": "Ben",
+      "confidence": 0.99,
+      "reason": "From applicant profile",
+      "needs_review": false
+    },
+    {
+      "field_id": "cover_letter",
+      "value": "I’m excited about Pulley because...",
+      "confidence": 0.72,
+      "reason": "Generated from JD + profile; subjective",
+      "needs_review": true
+    }
+  ],
+  "attachments": [
+    { "kind": "resume_pdf", "path": "/path/to/Resume_AI.pdf" }
+  ]
+}
+
+
+
+
+
+
+
+
+
+Test links:
+
+Here are some URLs:
+
+@https://jobs.ashbyhq.com/infisical/f137cca7-0698-46f8-a944-f200ec8b61dd/application 
+The above URL is the actual application form
+
+@https://jobs.ashbyhq.com/infisical/f137cca7-0698-46f8-a944-f200ec8b61dd 
+The above URL is the job description and you have to click the "Apply for this Job" button at the bottom of the page. The form schema should ideally detect this and note that it is not a job application form but there is an apply button that might advance to the next page, so that the caller will know another loop step is necessary to expose the actual form
+
+
+@https://www.optery.com/careers/?ashby_jid=97a7f90f-9763-4d21-a739-dfbce32581b5 
+This is another Ashby link. It's hosted on the company's website, so the URL heuristics won't work. 
+
+Also in this case clicking on the "Apply for this job" button doesn't change the URL to /application but does reveal a form. We'll want to extract both pages -- the job description and the second tab with the upload button.
+
+
+The form also has a custom question we should make sure we parse: "Why are you interested in this position, and what makes you a strong candidate for it?"
+
+@https://jobs.lever.co/curri/79f37da3-3054-4060-b8b5-1d74380377b2 
+This is a Lever link. It also has an apply button at the bottom that we should recognize so that the caller knows we have to jump to the next page. 
+
+@https://jobs.lever.co/curri/79f37da3-3054-4060-b8b5-1d74380377b2/apply 
+This form is for a sales job, and is what you get if you click the apply link above. It's a good test of how we handle questions we aren't qualified for: "do you have experience in logistics?" (No, the test profile we're using is a software engineer)
+
+@https://vercel.com/careers/ai-engineer-5517523004 
+This is a different format and perhaps not an ATS page. It also has an upload button that we want to make sure we can handle. 
+
+@https://job-boards.greenhouse.io/thalamusgme/jobs/4253197007 
+And a greenhouse link
+
+
+So for the above links, we want to create test fixtures on disk with snapshots we can reuse for testing. I think we should make a --download-test-URL command line option that will open the URL in puppeteer and download the DOM. We optionally should be be able to simulate a click on the "Apply for this job" button to advance to the real form and snapshot that too. 
+
+Once you implement that, please prepare sample command lines we can run to snapshot the pages directly into the test fixtures directory.
+

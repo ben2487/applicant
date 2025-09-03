@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 
 from .schema import FormSchema, FormField
 from ..ai_search import get_openai_client
+from ..tracing import json_blob, event
 
 
 def _build_fields_brief(schema: FormSchema) -> List[Dict[str, Any]]:
@@ -97,6 +98,8 @@ def generate_answers(
     )
 
     client = get_openai_client()
+    # Log prompt
+    json_blob("LLM", "DEBUG", "form_answer_prompt", {"model": model, "prompt": prompt})
     resp = client.chat.completions.create(
         model=model,
         response_format={"type": "json_object"},
@@ -114,6 +117,8 @@ def generate_answers(
     )
 
     raw = resp.choices[0].message.content or "{}"
+    # Log raw response
+    json_blob("LLM", "DEBUG", "form_answer_response", {"model": model, "response": raw})
     import json
 
     data: Dict[str, Any]
@@ -148,6 +153,8 @@ def generate_answers(
             schema.validity.meta["llm_answered_fields"] = answer_count
     except Exception:
         pass
+
+    event("LLM", "INFO", "form_answers_summary", answered_fields=answer_count)
 
     return schema
 

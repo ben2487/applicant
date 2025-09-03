@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 
 from playwright.async_api import Page
+from ..tracing import json_blob, text, event
 
 from .schema import FormSchema, FormSection, FormField, Locator, Validity
 from .snapshot_loader import scan_snapshot_for_selector, load_snapshot_as_page, load_snapshot_manifest
@@ -201,6 +202,24 @@ async def extract_form_schema_from_page(page: Page, url: Optional[str] = None) -
         sections=[section],
         validity=Validity(is_valid_job_application_form=is_valid, confidence=round(conf, 2)),
     )
+    # Emit human-readable summary and JSON into trace
+    try:
+        lines: list[str] = []
+        lines.append(f"Form found: {'yes' if schema.validity.is_valid_job_application_form else 'no'}  (confidence={schema.validity.confidence})")
+        total_fields = 0
+        for si, sec in enumerate(schema.sections):
+            title = sec.title or f"Section {si+1}"
+            lines.append(f"\n[{title}]")
+            for f in sec.fields:
+                total_fields += 1
+                req = "required" if f.required else "optional"
+                label = (f.label or f.name or f.field_id)
+                lines.append(f"- {label}  |  type={f.type}  |  {req}")
+        lines.append(f"\nTotal fields: {total_fields}")
+        text("FORM", "INFO", "form_schema_summary", "\n".join(lines))
+        json_blob("FORM", "DEBUG", "form_schema_json", schema.model_dump())
+    except Exception as e:
+        event("FORM", "DEBUG", "form_schema_summary_failed", error=str(e))
     return schema
 
 

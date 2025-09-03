@@ -8,6 +8,7 @@ from typing import Optional, List
 from playwright.async_api import Page
 
 from .schema import FormSchema, FormField
+from ..tracing import action, event, image
 
 
 @dataclass
@@ -42,6 +43,7 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
     # Try visible file inputs first
     try:
         print(f"[executor] Attempting resume upload: {resume_pdf}")
+        event("FORM", "DEBUG", "resume_upload_start", path=str(resume_pdf))
         file_inputs = page.locator('input[type="file"]')
         if await file_inputs.count() > 0:
             # prefer the first visible; else first
@@ -52,6 +54,12 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
                         await el.set_input_files(str(resume_pdf))
                         await page.wait_for_timeout(opts.wait_after_upload_ms)
                         print("[executor] Resume upload completed (visible input).")
+                        try:
+                            png = await page.screenshot(full_page=False)
+                            image("FORM", "TRACE", "after_resume_upload", png)
+                        except Exception:
+                            pass
+                        event("FORM", "INFO", "resume_upload_complete")
                         return True
                 except Exception:
                     continue
@@ -60,6 +68,12 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
                 await file_inputs.first.set_input_files(str(resume_pdf))
                 await page.wait_for_timeout(opts.wait_after_upload_ms)
                 print("[executor] Resume upload completed (first input).")
+                try:
+                    png = await page.screenshot(full_page=False)
+                    image("FORM", "TRACE", "after_resume_upload", png)
+                except Exception:
+                    pass
+                event("FORM", "INFO", "resume_upload_complete")
                 return True
             except Exception:
                 pass
@@ -85,6 +99,12 @@ async def _upload_resume(page: Page, schema: FormSchema, resume_pdf: Path, opts:
                         await file_inputs.first.set_input_files(str(resume_pdf))
                         await page.wait_for_timeout(opts.wait_after_upload_ms)
                         print("[executor] Resume upload completed (after clicking upload button).")
+                        try:
+                            png = await page.screenshot(full_page=False)
+                            image("FORM", "TRACE", "after_resume_upload", png)
+                        except Exception:
+                            pass
+                        event("FORM", "INFO", "resume_upload_complete")
                         return True
                 except Exception:
                     pass
@@ -220,10 +240,12 @@ async def _fill_field(page: Page, field: FormField, value: str, opts: ExecutionO
 async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile_root: Path, *, wait_seconds: int = 60, preferred_resume_pdf: Optional[Path] = None) -> None:
     opts = ExecutionOptions()
     print("[executor] Form loaded; starting execution")
+    event("FORM", "INFO", "form_execution_start", url=page.url)
     # 1) Upload resume first to trigger autofill
     resume = _pick_resume_pdf(profile_root, preferred=preferred_resume_pdf)
     if resume:
-        await _upload_resume(page, schema_with_answers, resume, opts)
+        with action("upload_resume", category="FORM", path=str(resume)):
+            await _upload_resume(page, schema_with_answers, resume, opts)
         # Give autofill a bit more time to propagate values and render
         await page.wait_for_timeout(2000)
 
@@ -269,12 +291,20 @@ async def execute_fill_plan(page: Page, schema_with_answers: FormSchema, profile
                     continue
                 if f.type in {"text", "email", "tel", "number", "date", "textarea"}:
                     print(f"[executor] Filling {f.type}: {(f.label or f.name or f.field_id)} -> {answer}")
-                await _fill_field(page, f, str(answer), opts)
+                with action("fill_field", category="FORM", field_id=f.field_id, label=(f.label or f.name or f.field_id), type=f.type):
+                    await _fill_field(page, f, str(answer), opts)
+                    try:
+                        png = await page.screenshot(full_page=False)
+                        image("FORM", "TRACE", f"after_fill_{f.field_id}", png)
+                    except Exception:
+                        pass
             except Exception as e:
                 print(f"[executor] Failed to fill field: {(f.label or f.name or f.field_id)} | error={e}")
+                event("FORM", "DEBUG", "fill_field_error", field_id=f.field_id, error=str(e))
                 continue
 
     # 3) Leave browser open for manual review
     await page.wait_for_timeout(wait_seconds * 1000)
+    event("FORM", "INFO", "form_execution_complete", hold_seconds=wait_seconds)
 
 

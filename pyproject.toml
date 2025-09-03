@@ -18,6 +18,9 @@ openai = "^1.40.0"
 google-api-python-client = "^2.141.0"
 google-auth-httplib2 = "^0.2.0"
 google-auth-oauthlib = "^1.2.1"
+eliot = "^1.16.0"
+requests = "^2.32.3"
+ddgs = "^9.5.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
@@ -32,7 +35,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.black]
 line-length = 88
 target-version = ['py310']
-include = '\.pyi?$'
+include = '\\.pyi?$'
 extend-exclude = '''
 /(
   # directories

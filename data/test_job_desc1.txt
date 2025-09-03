@@ -1,0 +1,100 @@
+Overview
+Application
+Secoda makes the experience of exploring and using data as intuitive, fast, and useful as using ChatGPT. When hiring, we prioritize candidates who are ambitious, self-starters, and great teammates. We have a deep sense of ownership, and believe every employee should have an impact on Secoda and its mission. 
+
+A Software Engineer at Secoda will contribute to our customers' experience using Secoda and the overall success of the company. You'll collaborate closely with design, product management, and engineering to shape our product experience, and influence our product roadmap. We value your problem-solving skills, technical acumen, and ability to communicate complex ideas. We prioritize your potential, passion for learning, and commitment to best practices that will bring meaningful impact and help shape our platform's future.
+
+What you will be doing:
+
+Build AI-powered features that help answer data questions or automate tasks.
+
+Develop data integrations to data warehouses, BI tools, and databases, and others that sync metadata and build the lineage graph.
+
+Create governance tools such as data quality monitoring, business glossary management, and compliance tracking that integrate into teams' existing processes.
+
+Optimize data processing at scale including performance of search, lineage tracking, and metadata ingestion to handle enterprise-scale data.
+
+Design cross-platform experiences on web applications, browser extensions, and API integrations that bring data discovery into users' daily workflows.
+
+Who you are:
+
+Curious and understand the core technologies in our stack: React (TypeScript), Python (Django), Postgres, Elasticsearch, and AWS
+
+Autonomous in figuring out the solutions to challenges
+
+Care about users and craft a great product experience
+
+Curious and willing to learn something you don’t have experience in
+
+Uphold an unreasonable quality bar in engineering, security, and design
+
+Value clear and frequent communication
+
+Nice to Have:
+
+Experience working in a fast-paced startup environment
+
+Building integrations for Modern Data Stack tools, i.e, Snowflake, Looker, dbt
+
+About Secoda
+What we offer: 
+
+💰 Competitive salary and equity
+
+🩺 Medical, dental, and vision coverage from day 1
+
+$1000 Healthcare Spending Account
+
+$500 Taxable Spending Account
+
+🏝 Unlimited time off policy
+
+👪 Mat and Pat leave top-up
+
+📚 Learning & Development benefit ($1,000)
+
+💻 Equipment & $500 home office setup stipend
+
+🥳 Team activities and retreats to connect with your fellow teammates
+
+💛 A challenging and fulfilling opportunity to join a fast-growing start-up
+
+Hybrid Office Policy
+
+We have a beautiful office in Liberty Village and work in a Hybrid schedule with Tuesdays, Thursdays and every other Friday as our in-office days. We provide lunch for our team every other Friday. 
+
+We believe time together in person is valuable and important. We host ample social opportunities and encourage employees to attend team off-sites and events (dinners and game nights) as well as a yearly 4-day retreat.
+
+Who we are: 
+
+Curious: We lead with a genuine interest in customers, data, and the unknown. We work hard to understand other points of view, and ask great questions to investigate what is right.
+
+Tough: Resilience is key in the unpredictable startup landscape. We embrace audacious goals, understanding that occasional setbacks serve as opportunities to refine our abilities.
+
+Humble: We embody humility, eschewing arrogance and complacency while fostering an inclusive atmosphere for all. We remain open to change, recognizing that many of our existing practices may require improvement.
+
+Analytical: We are data driven. Our commitment to data-driven decision-making ensures that we are precise, informed, and effective in our actions. We rely on data to guide our strategies and measure our success.
+
+Ambitious: We aim for excellence with ambition, not arrogance. We nurture inclusivity and remain open to improving our practices on our journey to be our best.
+
+How we work:
+
+We Win Together: The greater good over function or self. No job is too big; no job is too small. We all may be called to serve in many different ways.
+
+Customer Comes First: We are always optimizing the customer's experience, we put ourselves in the customer's shoes and always deliver nothing less than the best for our customers.
+
+Bring The Sun: We believe in maintaining a positive attitude and spreading warmth and optimism. We assume good intentions and approach situations with a bright, hopeful outlook.
+
+Bias For Action: We believe that moving fast is critical to success. By taking prompt and decisive action, we achieve our goals efficiently and effectively.
+
+Think Big: We encourage innovative thinking and challenge the status quo. This means being open to new ideas, questioning existing processes, setting ambitious goals, and continuously seeking better ways to do things.
+
+Grow Our Garden: Like a well-tended garden, our growth relies on nurturing ourselves and each other. We grow our garden by taking and giving knowledge, curiosity and continuous learning. Everyone has something to teach and something to learn. Be a mentor; be a student. Engage in the ongoing cultivation of knowledge.
+
+Own It: We take pride in our work and strive for excellence. We take accountability, pay attention to details. We don't wait for problems to arise; we proactively identify and address potential issues.
+
+If your experience aligns with this role you're looking for an exciting opportunity to join an early-stage startup, then we want to hear from you!
+
+At Secoda, we believe that diversity is key to building high-performing teams, and creating an inclusive work environment is our priority. We are an equal-opportunity employer and we welcome people of diverse backgrounds, perspectives, and skills.
+
+We are happy to provide reasonable accommodations to candidates in need of individualized support during the hiring process.

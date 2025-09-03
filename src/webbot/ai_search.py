@@ -1,6 +1,7 @@
 from __future__ import annotations
 from .config import load_settings
 from openai import OpenAI
+from .tracing import json_blob
 
 
 class OpenAIConfigError(RuntimeError): ...
@@ -45,6 +46,7 @@ def generate_search_queries(
             "for the given company and role. Prefer site: filters if a company domain is provided. "
             f"Company: {company}\nTitle: {title}\nDomain: {company_domain or '(unknown)'}"
         )
+        json_blob("LLM", "TRACE", "search_queries_prompt", {"prompt": prompt})
         cmpl = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -56,7 +58,9 @@ def generate_search_queries(
             ],
             temperature=0.2,
         )
-        lines = (cmpl.choices[0].message.content or "").splitlines()
+        content = cmpl.choices[0].message.content or ""
+        json_blob("LLM", "TRACE", "search_queries_response", {"response": content})
+        lines = content.splitlines()
         refined = [line.strip("-• \t") for line in lines if line.strip()]
         return list(dict.fromkeys(seeds + refined))  # dedupe, preserve order
     except Exception:
