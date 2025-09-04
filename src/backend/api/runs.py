@@ -131,6 +131,7 @@ def create_run():
         created_run = RunRepository.create(run)
         
         # Start Playwright automation
+        print(f"🎬 Starting Playwright automation for run {created_run.id}...")
         try:
             result = asyncio.run(playwright_service.start_run(
                 created_run.id, 
@@ -138,7 +139,10 @@ def create_run():
                 created_run.headless
             ))
             
+            print(f"✅ Playwright automation started successfully: {result}")
+            
             # Emit WebSocket status update
+            print(f"📡 Emitting WebSocket status update for run {created_run.id}...")
             ws_manager = get_websocket_manager()
             ws_manager.emit_run_status(created_run.id, {
                 'run_id': created_run.id,
@@ -146,9 +150,10 @@ def create_run():
                 'message': result.get('message', 'Run started'),
                 'timestamp': datetime.now().isoformat()
             })
+            print(f"✅ WebSocket status update emitted")
             
         except Exception as e:
-            print(f"Error starting Playwright automation: {e}")
+            print(f"❌ Error starting Playwright automation: {e}")
             # Update run status to failed
             RunRepository.update_status(created_run.id, RunResultStatus.FAILED)
             created_run.result_status = RunResultStatus.FAILED

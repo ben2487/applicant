@@ -1,4 +1,4 @@
-.PHONY: setup test lint fmt run list list-browser list-user test-ai help db-up db-wait db-reset clean-traces dev backend-test frontend frontend-install frontend-build web
+.PHONY: setup test lint fmt run list list-browser list-user test-ai help db-up db-wait db-reset clean-traces dev backend-test frontend frontend-install frontend-build web web-verbose
 
 # Default target
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  frontend-install - Install frontend dependencies"
 	@echo "  frontend-build - Build frontend for production"
 	@echo "  web            - Start both backend and frontend servers"
+	@echo "  web-verbose    - Start servers with verbose logging"
 	@echo "  backend-test   - Run backend tests"
 	@echo "  help           - Show this help message"
 
@@ -140,4 +141,9 @@ frontend-build:
 web: frontend-install
 	@echo "Starting WebBot web interface..."
 	./start-servers.sh
+
+# Start both backend and frontend servers with verbose logging
+web-verbose: frontend-install
+	@echo "Starting WebBot web interface with verbose logging..."
+	VERBOSE=1 ./start-servers.sh
 

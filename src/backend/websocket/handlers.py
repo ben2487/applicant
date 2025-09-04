@@ -31,28 +31,34 @@ class WebSocketManager:
         @self.socketio.on("connect")
         def handle_connect():
             """Handle client connection."""
+            print(f"🔌 Client connected: {request.sid}")
             emit("connected", {"message": "Connected to WebSocket server"})
         
         @self.socketio.on("disconnect")
         def handle_disconnect():
             """Handle client disconnection."""
-            print("Client disconnected")
+            print(f"❌ Client disconnected: {request.sid}")
         
         @self.socketio.on("join_run")
         def handle_join_run(data):
             """Join a specific run room for real-time updates."""
             run_id = data.get("run_id")
             if not run_id:
+                print("❌ Join run failed: run_id is required")
                 emit("error", {"message": "run_id is required"})
                 return
             
             room = f"run_{run_id}"
+            print(f"🚪 Client {request.sid} joining room: {room}")
             join_room(room)
             emit("joined_run", {"run_id": run_id, "room": room})
             
             # Send current run status if available
             if run_id in self.active_runs:
+                print(f"📊 Sending current status for run {run_id}")
                 emit("run_status", self.active_runs[run_id])
+            else:
+                print(f"ℹ️ No active status found for run {run_id}")
         
         @self.socketio.on("leave_run")
         def handle_leave_run(data):
@@ -60,8 +66,11 @@ class WebSocketManager:
             run_id = data.get("run_id")
             if run_id:
                 room = f"run_{run_id}"
+                print(f"🚪 Client {request.sid} leaving room: {room}")
                 leave_room(room)
                 emit("left_run", {"run_id": run_id})
+            else:
+                print("❌ Leave run failed: run_id is required")
         
         @self.socketio.on("control_run")
         def handle_control_run(data):
@@ -69,13 +78,17 @@ class WebSocketManager:
             run_id = data.get("run_id")
             command = data.get("command")
             
+            print(f"🎮 Control command received: {command} for run {run_id}")
+            
             if not run_id or not command:
+                print("❌ Control command failed: run_id and command are required")
                 emit("error", {"message": "run_id and command are required"})
                 return
             
             room = f"run_{run_id}"
             
             try:
+                print(f"🔧 Executing {command} command for run {run_id}...")
                 # Handle commands with Playwright service
                 if command == 'pause':
                     result = asyncio.run(playwright_service.pause_run(run_id))
@@ -85,6 +98,8 @@ class WebSocketManager:
                     result = asyncio.run(playwright_service.stop_run(run_id))
                 else:
                     result = {'status': 'error', 'message': 'Unknown command'}
+                
+                print(f"✅ Control command {command} result: {result}")
                 
                 # Emit status update
                 self.emit_run_status(run_id, {
@@ -102,7 +117,7 @@ class WebSocketManager:
                 }, room=room)
                 
             except Exception as e:
-                print(f"Error handling control command: {e}")
+                print(f"❌ Error handling control command: {e}")
                 emit("control_acknowledged", {
                     "run_id": run_id,
                     "command": command,
@@ -130,19 +145,23 @@ class WebSocketManager:
     def emit_run_event(self, run_id: int, event_data: Dict[str, Any]):
         """Emit a run event to all clients monitoring the run."""
         room = f"run_{run_id}"
+        print(f"📝 Emitting run event to room {room}: {event_data}")
         self.socketio.emit("run_event", event_data, room=room)
     
     def emit_run_status(self, run_id: int, status_data: Dict[str, Any]):
         """Emit run status update to all clients monitoring the run."""
         room = f"run_{run_id}"
+        print(f"📊 Emitting run status to room {room}: {status_data}")
         self.socketio.emit("run_status", status_data, room=room)
         
         # Update active runs cache
         self.active_runs[run_id] = status_data
+        print(f"💾 Updated active runs cache for run {run_id}")
     
     def emit_screencast_frame(self, run_id: int, frame_data: str):
         """Emit a screencast frame to all clients monitoring the run."""
         room = f"run_{run_id}"
+        print(f"🖼️ Emitting screencast frame to room {room}, size: {len(frame_data)}")
         self.socketio.emit("screencast_frame", {
             "run_id": run_id,
             "frame": frame_data,

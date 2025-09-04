@@ -56,19 +56,27 @@ class PlaywrightService:
     async def start_run(self, run_id: int, initial_url: str, headless: bool = False) -> Dict[str, Any]:
         """Start a new automation run."""
         try:
+            print(f"🚀 Starting Playwright automation for run {run_id}")
+            print(f"🌐 URL: {initial_url}")
+            print(f"👁️ Headless: {headless}")
+            
             # Create browser context for this run
+            print(f"🔧 Creating browser context for run {run_id}...")
             self.context = await self.browser.new_context(
                 viewport={'width': 1280, 'height': 720},
                 record_video_dir='./videos' if not headless else None
             )
             
             # Create new page
+            print(f"📄 Creating new page for run {run_id}...")
             self.page = await self.context.new_page()
             
             # Set up console logging
+            print(f"📝 Setting up console logging for run {run_id}...")
             await self._setup_console_logging(run_id)
             
             # Set up network monitoring
+            print(f"🌐 Setting up network monitoring for run {run_id}...")
             await self._setup_network_monitoring(run_id)
             
             # Store run info
@@ -78,23 +86,30 @@ class PlaywrightService:
                 'started_at': datetime.now(),
                 'status': 'IN_PROGRESS'
             }
+            print(f"💾 Run {run_id} stored in active runs")
             
             # Navigate to initial URL
+            print(f"🧭 Navigating to {initial_url}...")
             await self._log_event(run_id, EventLevel.INFO, EventCategory.BROWSER, 
                                 f"Navigating to {initial_url}")
             
             await self.page.goto(initial_url, wait_until='networkidle')
+            print(f"✅ Successfully navigated to {initial_url}")
             
             # Take initial screenshot
+            print(f"📸 Taking initial screenshot for run {run_id}...")
             await self._take_screenshot(run_id)
             
-            return {
+            result = {
                 'run_id': run_id,
                 'status': 'IN_PROGRESS',
                 'message': 'Run started successfully'
             }
+            print(f"🎉 Run {run_id} started successfully: {result}")
+            return result
             
         except Exception as e:
+            print(f"❌ Error starting run {run_id}: {e}")
             logger.error(f"Error starting run {run_id}: {e}")
             await self._log_event(run_id, EventLevel.ERROR, EventCategory.SYSTEM, 
                                 f"Failed to start run: {str(e)}")
@@ -255,11 +270,19 @@ class PlaywrightService:
         try:
             screenshot_b64 = await self.take_screenshot(run_id)
             
-            # In a real implementation, this would emit via WebSocket
-            # For now, we'll just log it
+            # Emit via WebSocket
+            from ..websocket.handlers import get_websocket_manager
+            try:
+                ws_manager = get_websocket_manager()
+                ws_manager.emit_screencast_frame(run_id, screenshot_b64)
+                print(f"🖼️ Screenshot emitted via WebSocket for run {run_id}")
+            except Exception as ws_error:
+                print(f"⚠️ Failed to emit screenshot via WebSocket: {ws_error}")
+            
             logger.info(f"Screenshot taken for run {run_id}")
             
         except Exception as e:
+            print(f"❌ Error taking screenshot for run {run_id}: {e}")
             logger.error(f"Error taking screenshot for run {run_id}: {e}")
 
     async def _log_event(self, run_id: int, level: EventLevel, category: EventCategory, 
@@ -279,10 +302,19 @@ class PlaywrightService:
             # Save to database
             RunEventRepository.create(event)
             
-            # In a real implementation, this would also emit via WebSocket
+            # Emit via WebSocket
+            from ..websocket.handlers import get_websocket_manager
+            try:
+                ws_manager = get_websocket_manager()
+                ws_manager.emit_run_event(run_id, event.dict())
+                print(f"📝 Event emitted via WebSocket for run {run_id}: {level} - {message}")
+            except Exception as ws_error:
+                print(f"⚠️ Failed to emit event via WebSocket: {ws_error}")
+            
             logger.info(f"Event logged for run {run_id}: {level} - {message}")
             
         except Exception as e:
+            print(f"❌ Error logging event for run {run_id}: {e}")
             logger.error(f"Error logging event for run {run_id}: {e}")
 
 

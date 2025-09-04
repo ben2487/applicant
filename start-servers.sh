@@ -3,6 +3,13 @@
 # WebBot Server Startup Script
 # This script starts both the Flask backend and React frontend
 
+# Check if verbose mode is enabled
+VERBOSE=${VERBOSE:-0}
+if [ "$VERBOSE" = "1" ]; then
+    echo "🔍 Verbose logging enabled"
+    set -x  # Print commands as they execute
+fi
+
 echo "Starting WebBot servers..."
 
 # Check if PostgreSQL is running
@@ -15,7 +22,12 @@ fi
 
 # Start Flask backend
 echo "Starting Flask backend on port 8000..."
-DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=False)" > flask.log 2>&1 &
+if [ "$VERBOSE" = "1" ]; then
+    echo "🔍 Starting Flask with verbose logging..."
+    DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=True)" &
+else
+    DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=False)" > flask.log 2>&1 &
+fi
 BACKEND_PID=$!
 
 # Wait for backend to start
@@ -33,7 +45,12 @@ fi
 # Start React frontend
 echo "Starting React frontend on port 3000..."
 cd frontend
-npm run dev > ../frontend.log 2>&1 &
+if [ "$VERBOSE" = "1" ]; then
+    echo "🔍 Starting React with verbose logging..."
+    npm run dev &
+else
+    npm run dev > ../frontend.log 2>&1 &
+fi
 FRONTEND_PID=$!
 cd ..
 

@@ -49,39 +49,52 @@ export function useWebSocket(runId?: number) {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
+    console.log('🔌 Initializing WebSocket connection...');
     // Connect to WebSocket server
     const newSocket = io('http://localhost:8000', {
       transports: ['websocket', 'polling'],
     });
 
     newSocket.on('connect', () => {
-      console.log('WebSocket connected');
+      console.log('✅ WebSocket connected successfully');
       setIsConnected(true);
     });
 
     newSocket.on('disconnect', () => {
-      console.log('WebSocket disconnected');
+      console.log('❌ WebSocket disconnected');
       setIsConnected(false);
     });
 
+    newSocket.on('connect_error', (error) => {
+      console.error('❌ WebSocket connection error:', error);
+    });
+
     newSocket.on('run_event', (data: RunEvent) => {
-      console.log('Received run event:', data);
+      console.log('📝 Received run event:', data);
       setEvents(prev => [...prev, data]);
     });
 
     newSocket.on('run_status', (data: RunStatus) => {
-      console.log('Received run status:', data);
+      console.log('📊 Received run status:', data);
       setStatus(data);
     });
 
     newSocket.on('screencast_frame', (data: ScreencastFrame) => {
-      console.log('Received screencast frame');
+      console.log('🖼️ Received screencast frame, size:', data.frame?.length || 0);
       setScreencastFrame(data.frame);
     });
 
     newSocket.on('console_log', (data: ConsoleLog) => {
-      console.log('Received console log:', data);
+      console.log('💬 Received console log:', data);
       setConsoleLogs(prev => [...prev, data]);
+    });
+
+    newSocket.on('control_acknowledged', (data) => {
+      console.log('✅ Control command acknowledged:', data);
+    });
+
+    newSocket.on('error', (error) => {
+      console.error('❌ WebSocket error:', error);
     });
 
     socketRef.current = newSocket;
@@ -94,21 +107,24 @@ export function useWebSocket(runId?: number) {
 
   useEffect(() => {
     if (socket && runId) {
+      console.log(`🚪 Joining run room: ${runId}`);
       // Join the run room
       socket.emit('join_run', { run_id: runId });
-      console.log(`Joined run room: ${runId}`);
 
       return () => {
+        console.log(`🚪 Leaving run room: ${runId}`);
         // Leave the run room
         socket.emit('leave_run', { run_id: runId });
-        console.log(`Left run room: ${runId}`);
       };
     }
   }, [socket, runId]);
 
   const sendControlCommand = (command: 'pause' | 'resume' | 'stop') => {
     if (socket && runId) {
+      console.log(`🎮 Sending control command: ${command} for run ${runId}`);
       socket.emit('control_run', { run_id: runId, command });
+    } else {
+      console.warn('⚠️ Cannot send control command: socket or runId not available');
     }
   };
 

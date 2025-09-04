@@ -38,19 +38,22 @@ export function NewApplication() {
       return;
     }
 
+    console.log('🚀 Starting new run with URL:', url);
     try {
       setIsRunning(true);
       clearEvents();
       
+      console.log('📡 Creating run via API...');
       const run = await createRun({
         initial_url: url,
         headless: false, // We want to see the browser
       });
       
+      console.log('✅ Run created successfully:', run);
       setCurrentRun(run);
       
     } catch (error) {
-      console.error('Failed to start run:', error);
+      console.error('❌ Failed to start run:', error);
       alert('Failed to start run');
       setIsRunning(false);
     }
