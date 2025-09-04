@@ -132,7 +132,10 @@ def create_run():
         
         # Start Playwright automation
         print(f"🎬 Starting Playwright automation for run {created_run.id}...")
+        print(f"🔍 Playwright service browser: {playwright_service.browser}")
+        print(f"🔍 Playwright service playwright: {playwright_service.playwright}")
         try:
+            print(f"🔍 About to call playwright_service.start_run...")
             result = asyncio.run(playwright_service.start_run(
                 created_run.id, 
                 created_run.initial_url, 

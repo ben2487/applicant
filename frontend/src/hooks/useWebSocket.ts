@@ -53,6 +53,8 @@ export function useWebSocket(runId?: number) {
     // Connect to WebSocket server
     const newSocket = io('http://localhost:8000', {
       transports: ['websocket', 'polling'],
+      timeout: 5000,
+      forceNew: true,
     });
 
     newSocket.on('connect', () => {
@@ -60,13 +62,14 @@ export function useWebSocket(runId?: number) {
       setIsConnected(true);
     });
 
-    newSocket.on('disconnect', () => {
-      console.log('❌ WebSocket disconnected');
+    newSocket.on('disconnect', (reason) => {
+      console.log('❌ WebSocket disconnected:', reason);
       setIsConnected(false);
     });
 
     newSocket.on('connect_error', (error) => {
       console.error('❌ WebSocket connection error:', error);
+      setIsConnected(false);
     });
 
     newSocket.on('run_event', (data: RunEvent) => {

@@ -36,7 +36,12 @@ def create_app(test_config=None):
     )
     
     # Initialize WebSocket manager
-    init_websocket_manager(socketio)
+    try:
+        init_websocket_manager(socketio)
+        print("WebSocket manager initialized")
+    except Exception as e:
+        print(f"Failed to initialize WebSocket manager: {e}")
+        # Don't raise here as the app can still work without WebSocket
     
     # Register blueprints
     app.register_blueprint(runs_bp)
@@ -47,6 +52,12 @@ def create_app(test_config=None):
     def health_check():
         """Health check endpoint."""
         return {"status": "healthy", "message": "WebBot backend is running"}
+    
+    # Test endpoint
+    @app.route("/test")
+    def test_endpoint():
+        """Test endpoint."""
+        return {"message": "Test endpoint working"}
     
     # Initialize database on startup
     with app.app_context():

@@ -7,12 +7,16 @@ import { Input } from '@/components/ui/input';
 import { createRun } from '@/lib/api';
 import { Run } from '@/types/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useBackendHealth } from '@/hooks/useBackendHealth';
+import { useToaster } from '@/components/ui/toaster';
 
 export function NewApplication() {
   const [url, setUrl] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [currentRun, setCurrentRun] = useState<Run | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const { addToast } = useToaster();
+  const { isHealthy, isChecking } = useBackendHealth();
   
   // WebSocket integration
   const {
@@ -34,7 +38,11 @@ export function NewApplication() {
 
   const handleStartRun = async () => {
     if (!url.trim()) {
-      alert('Please enter a URL');
+      addToast({
+        title: 'Invalid Input',
+        description: 'Please enter a URL',
+        variant: 'warning',
+      });
       return;
     }
 
@@ -52,9 +60,31 @@ export function NewApplication() {
       console.log('✅ Run created successfully:', run);
       setCurrentRun(run);
       
+      addToast({
+        title: 'Run Started',
+        description: `Successfully started automation for ${url}`,
+        variant: 'success',
+      });
+      
     } catch (error) {
       console.error('❌ Failed to start run:', error);
-      alert('Failed to start run');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (errorMessage.includes('CONNECTION_ERROR')) {
+        addToast({
+          title: 'Backend Connection Error',
+          description: 'Unable to connect to the backend server. Please check if the server is running.',
+          variant: 'destructive',
+          duration: 10000,
+        });
+      } else {
+        addToast({
+          title: 'Failed to Start Run',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
+      
       setIsRunning(false);
     }
   };
@@ -109,7 +139,7 @@ export function NewApplication() {
               />
               <Button
                 onClick={handleStartRun}
-                disabled={isRunning || !url.trim()}
+                disabled={isRunning || !url.trim() || !isHealthy}
                 className="min-w-[100px]"
               >
                 <Play className="h-4 w-4 mr-2" />
@@ -126,11 +156,23 @@ export function NewApplication() {
                 </Button>
               )}
             </div>
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-              <span className="text-sm text-gray-600">
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </span>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  isHealthy === null ? 'bg-yellow-500' : 
+                  isHealthy ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <span className="text-sm text-gray-600">
+                  {isChecking ? 'Checking Backend...' : 
+                   isHealthy ? 'Backend Online' : 'Backend Offline'}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className="text-sm text-gray-600">
+                  {isConnected ? 'WebSocket Connected' : 'WebSocket Disconnected'}
+                </span>
+              </div>
             </div>
           </div>
         </CardContent>

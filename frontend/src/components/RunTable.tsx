@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Run } from '@/types/api';
 import { getRuns } from '@/lib/api';
+import { useToaster } from '@/components/ui/toaster';
 
 const columns: ColumnDef<Run>[] = [
   {
@@ -101,6 +102,7 @@ export function RunTable() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const { addToast } = useToaster();
 
   const table = useReactTable({
     data: runs,
@@ -120,13 +122,29 @@ export function RunTable() {
         setRuns(response.runs);
       } catch (error) {
         console.error('Failed to fetch runs:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        
+        if (errorMessage.includes('CONNECTION_ERROR')) {
+          addToast({
+            title: 'Backend Connection Error',
+            description: 'Unable to connect to the backend server. Please check if the server is running.',
+            variant: 'destructive',
+            duration: 10000,
+          });
+        } else {
+          addToast({
+            title: 'Failed to Load Runs',
+            description: errorMessage,
+            variant: 'destructive',
+          });
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchRuns();
-  }, []);
+  }, [addToast]);
 
   if (loading) {
     return <div className="flex justify-center p-8">Loading runs...</div>;
