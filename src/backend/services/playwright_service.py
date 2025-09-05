@@ -60,6 +60,11 @@ class PlaywrightService:
             print(f"🌐 URL: {initial_url}")
             print(f"👁️ Headless: {headless}")
             
+            # Initialize Playwright if not already done
+            if not self.browser:
+                print(f"🔧 Initializing Playwright for run {run_id}...")
+                await self.initialize()
+            
             # Create browser context for this run
             print(f"🔧 Creating browser context for run {run_id}...")
             self.context = await self.browser.new_context(

@@ -6,7 +6,7 @@ export function useBackendHealth() {
 
   const checkHealth = async () => {
     try {
-      const response = await fetch('/api/health', {
+      const response = await fetch('/health', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

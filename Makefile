@@ -1,4 +1,4 @@
-.PHONY: setup test lint fmt run list list-browser list-user test-ai help db-up db-wait db-reset clean-traces dev backend-test frontend frontend-install frontend-build web web-verbose
+.PHONY: setup test lint fmt run list list-browser list-user test-ai help db-up db-wait db-reset clean-traces dev backend-test frontend frontend-install frontend-build web web-verbose web-unified
 
 # Default target
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  frontend-build - Build frontend for production"
 	@echo "  web            - Start both backend and frontend servers"
 	@echo "  web-verbose    - Start servers with verbose logging"
+	@echo "  web-unified    - Start servers with unified logging (all logs in one terminal)"
 	@echo "  backend-test   - Run backend tests"
 	@echo "  help           - Show this help message"
 
@@ -146,4 +147,9 @@ web: frontend-install
 web-verbose: frontend-install
 	@echo "Starting WebBot web interface with verbose logging..."
 	VERBOSE=1 ./start-servers.sh
+
+# Start both servers with unified logging (all logs in one terminal with colors)
+web-unified: frontend-install
+	@echo "Starting WebBot with unified logging..."
+	./start-unified.sh
 

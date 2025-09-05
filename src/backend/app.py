@@ -68,14 +68,8 @@ def create_app(test_config=None):
             print(f"Failed to initialize database: {e}")
             raise
 
-    # Initialize Playwright service
-    try:
-        import asyncio
-        asyncio.run(playwright_service.initialize())
-        print("Playwright service initialized")
-    except Exception as e:
-        print(f"Failed to initialize Playwright service: {e}")
-        # Don't raise here as the app can still work without Playwright
+    # Initialize Playwright service (lazy initialization)
+    print("Playwright service will be initialized on first use")
     
     # Note: We don't close the connection pool on each request teardown
     # The pool will be closed when the application shuts down

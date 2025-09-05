@@ -29,7 +29,7 @@ class WebSocketManager:
         """Set up WebSocket event handlers."""
         
         @self.socketio.on("connect")
-        def handle_connect():
+        def handle_connect(auth=None):
             """Handle client connection."""
             print(f"🔌 Client connected: {request.sid}")
             emit("connected", {"message": "Connected to WebSocket server"})
