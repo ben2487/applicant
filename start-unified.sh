@@ -3,6 +3,24 @@
 # WebBot Unified Logging Startup Script
 # This script starts both servers and combines all logs with colorized prefixes
 
+# Parse command line arguments
+RESTART_MODE=false
+if [ "$1" = "--restart" ] || [ "$1" = "-r" ]; then
+    RESTART_MODE=true
+elif [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "WebBot Unified Logging Startup Script"
+    echo ""
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --restart, -r    Restart existing services (kill and restart)"
+    echo "  --help, -h       Show this help message"
+    echo ""
+    echo "This script starts both the Flask backend and React frontend with unified logging."
+    echo "It automatically checks for port availability and kills conflicting processes."
+    exit 0
+fi
+
 # Colors for different log sources
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -19,7 +37,22 @@ FRONTEND_PREFIX="${GREEN}[FRONTEND]${NC}"
 BROWSER_PREFIX="${PURPLE}[BROWSER]${NC}"
 SYSTEM_PREFIX="${YELLOW}[SYSTEM]${NC}"
 
-echo -e "${SYSTEM_PREFIX} Starting WebBot with unified logging..."
+if [ "$RESTART_MODE" = true ]; then
+    echo -e "${SYSTEM_PREFIX} Restarting WebBot with unified logging..."
+else
+    echo -e "${SYSTEM_PREFIX} Starting WebBot with unified logging..."
+fi
+
+# Check network connectivity
+echo -e "${SYSTEM_PREFIX} Checking network connectivity..."
+if scutil --nwi | grep -q "Reachable"; then
+    echo -e "${SYSTEM_PREFIX} ✅ Network is connected"
+else
+    echo -e "${SYSTEM_PREFIX} ❌ No network connection detected. Please check your WiFi connection."
+    echo -e "${SYSTEM_PREFIX} Network status:"
+    scutil --nwi
+    exit 1
+fi
 
 # Function to check if a port is available
 check_port() {
@@ -64,7 +97,7 @@ check_port() {
     return 1
 }
 
-# Check if required ports are available
+# Check if required ports are available and restart services if needed
 echo -e "${SYSTEM_PREFIX} Checking port availability..."
 if ! check_port 8000 "Backend"; then
     echo -e "${SYSTEM_PREFIX} ❌ Cannot start backend on port 8000"
@@ -77,6 +110,34 @@ if ! check_port 3000 "Frontend"; then
 fi
 
 echo -e "${SYSTEM_PREFIX} ✅ All required ports are available"
+
+# If in restart mode, also check for any existing WebBot processes and kill them
+if [ "$RESTART_MODE" = true ]; then
+    echo -e "${SYSTEM_PREFIX} Checking for existing WebBot processes..."
+    
+    # Kill any existing Python processes that might be running the backend
+    pkill -f "src.backend.app" 2>/dev/null || true
+    pkill -f "log_forwarder.py" 2>/dev/null || true
+    
+    # Kill any existing Node processes that might be running the frontend
+    pkill -f "vite" 2>/dev/null || true
+    pkill -f "npm run dev" 2>/dev/null || true
+    
+    # Wait a moment for processes to terminate
+    sleep 2
+    
+    # Re-check ports after cleanup
+    echo -e "${SYSTEM_PREFIX} Re-checking ports after cleanup..."
+    if ! check_port 8000 "Backend"; then
+        echo -e "${SYSTEM_PREFIX} ❌ Cannot start backend on port 8000 after cleanup"
+        exit 1
+    fi
+    if ! check_port 3000 "Frontend"; then
+        echo -e "${SYSTEM_PREFIX} ❌ Cannot start frontend on port 3000 after cleanup"
+        exit 1
+    fi
+    echo -e "${SYSTEM_PREFIX} ✅ Ports are available after cleanup"
+fi
 
 # Check if PostgreSQL is running
 PG_ISREADY="pg_isready"
@@ -120,7 +181,7 @@ fi
 
 # Start Flask backend in background
 echo -e "${BACKEND_PREFIX} Starting Flask backend on port 8000..."
-DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=True)" 2>&1 | sed "s/^/${BACKEND_PREFIX} /" &
+DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=True)" 2>&1 | python3 log_forwarder.py --prefix "${BACKEND_PREFIX}" &
 BACKEND_PID=$!
 
 # Wait for backend to start
@@ -138,7 +199,7 @@ fi
 # Start React frontend in background
 echo -e "${FRONTEND_PREFIX} Starting React frontend on port 3000..."
 cd frontend
-npm run dev 2>&1 | sed "s/^/${FRONTEND_PREFIX} /" &
+npm run dev 2>&1 | python3 ../log_forwarder.py --prefix "${FRONTEND_PREFIX}" &
 FRONTEND_PID=$!
 cd ..
 

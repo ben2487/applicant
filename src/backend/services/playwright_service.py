@@ -105,6 +105,10 @@ class PlaywrightService:
             print(f"📸 Taking initial screenshot for run {run_id}...")
             await self._take_screenshot(run_id)
             
+            # Start continuous screenshot loop
+            print(f"🎬 Starting screenshot loop for run {run_id}...")
+            asyncio.create_task(self._screenshot_loop(run_id))
+            
             result = {
                 'run_id': run_id,
                 'status': 'IN_PROGRESS',
@@ -241,8 +245,16 @@ class PlaywrightService:
             
             event_level = level_map.get(level, EventLevel.INFO)
             
+            # Log as both a regular event and emit as console log
             await self._log_event(run_id, event_level, EventCategory.BROWSER, 
                                 f"Console {level}: {message}")
+            
+            # Also emit as console log for the frontend
+            await self._emit_console_log(run_id, level, message)
+            
+            # Print to terminal with proper prefix
+            prefix = "\\033[0;35m[BROWSER/PLAYWRIGHT]\\033[0m"  # Magenta for Playwright
+            print(f"{prefix} {level}: {message}")
         
         self.page.on('console', handle_console)
 
@@ -269,6 +281,16 @@ class PlaywrightService:
         
         self.page.on('request', handle_request)
         self.page.on('response', handle_response)
+
+    async def _screenshot_loop(self, run_id: int):
+        """Continuous screenshot loop for video streaming."""
+        try:
+            while run_id in self.active_runs:
+                await self._take_screenshot(run_id)
+                await asyncio.sleep(1)  # Take screenshot every second
+        except Exception as e:
+            print(f"❌ Error in screenshot loop for run {run_id}: {e}")
+            logger.error(f"Error in screenshot loop for run {run_id}: {e}")
 
     async def _take_screenshot(self, run_id: int):
         """Take a screenshot and emit it via WebSocket."""
@@ -321,6 +343,26 @@ class PlaywrightService:
         except Exception as e:
             print(f"❌ Error logging event for run {run_id}: {e}")
             logger.error(f"Error logging event for run {run_id}: {e}")
+
+    async def _emit_console_log(self, run_id: int, level: str, message: str):
+        """Emit a console log via WebSocket."""
+        try:
+            from ..websocket.handlers import get_websocket_manager
+            ws_manager = get_websocket_manager()
+            
+            log_data = {
+                "level": level.upper(),
+                "message": message,
+                "timestamp": datetime.now().isoformat(),
+                "category": "CONSOLE"
+            }
+            
+            ws_manager.emit_console_log(run_id, log_data)
+            print(f"💬 Console log emitted for run {run_id}: {level} - {message}")
+            
+        except Exception as e:
+            print(f"❌ Error emitting console log for run {run_id}: {e}")
+            logger.error(f"Error emitting console log for run {run_id}: {e}")
 
 
 # Global service instance

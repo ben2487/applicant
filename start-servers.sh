@@ -12,6 +12,17 @@ fi
 
 echo "Starting WebBot servers..."
 
+# Check network connectivity
+echo "Checking network connectivity..."
+if scutil --nwi | grep -q "Reachable"; then
+    echo "✅ Network is connected"
+else
+    echo "❌ No network connection detected. Please check your WiFi connection."
+    echo "Network status:"
+    scutil --nwi
+    exit 1
+fi
+
 # Check if PostgreSQL is running
 if ! pg_isready -h localhost -p 5432 > /dev/null 2>&1; then
     echo "PostgreSQL is not running. Starting it..."

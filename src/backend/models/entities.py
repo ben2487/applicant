@@ -128,6 +128,7 @@ class EventLevel(str):
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARN = "WARN"
+    WARNING = "WARNING"  # Alias for WARN
     ERROR = "ERROR"
 
 
@@ -140,3 +141,5 @@ class EventCategory(str):
     FORMS = "FORMS"
     CONSOLE = "CONSOLE"
     EXTRACT = "EXTRACT"
+    NETWORK = "NETWORK"
+    SYSTEM = "SYSTEM"

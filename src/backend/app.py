@@ -9,6 +9,7 @@ from flask_socketio import SocketIO
 from .database.connection import db_manager
 from .api.runs import runs_bp
 from .api.users import users_bp
+from .api.console import console_bp
 from .websocket.handlers import init_websocket_manager
 from .services.playwright_service import playwright_service
 
@@ -46,6 +47,7 @@ def create_app(test_config=None):
     # Register blueprints
     app.register_blueprint(runs_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(console_bp)
     
     # Health check endpoint
     @app.route("/health")
