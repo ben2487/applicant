@@ -22,14 +22,32 @@ SYSTEM_PREFIX="${YELLOW}[SYSTEM]${NC}"
 echo -e "${SYSTEM_PREFIX} Starting WebBot with unified logging..."
 
 # Check if PostgreSQL is running
-if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+PG_ISREADY="pg_isready"
+if ! command -v pg_isready >/dev/null 2>&1; then
+    PG_ISREADY="/opt/homebrew/opt/postgresql@16/bin/pg_isready"
+    if [ ! -f "$PG_ISREADY" ]; then
+        echo -e "${SYSTEM_PREFIX} ❌ pg_isready not found. Please install PostgreSQL or add it to PATH"
+        exit 1
+    fi
+fi
+
+if ! $PG_ISREADY -h localhost -p 5432 >/dev/null 2>&1; then
     echo -e "${SYSTEM_PREFIX} PostgreSQL is not running. Starting it..."
     brew services start postgresql@16
     echo -e "${SYSTEM_PREFIX} Waiting for PostgreSQL to be ready..."
-    while ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+    for i in {1..30}; do
+        if $PG_ISREADY -h localhost -p 5432 >/dev/null 2>&1; then
+            echo -e "${SYSTEM_PREFIX} PostgreSQL is ready!"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo -e "${SYSTEM_PREFIX} ❌ PostgreSQL failed to start after 30 seconds"
+            exit 1
+        fi
         sleep 1
     done
-    echo -e "${SYSTEM_PREFIX} PostgreSQL is ready!"
+else
+    echo -e "${SYSTEM_PREFIX} PostgreSQL is already running"
 fi
 
 # Start Flask backend in background

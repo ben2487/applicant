@@ -4,6 +4,7 @@ import json
 import asyncio
 from typing import Any, Dict, Optional
 
+from flask import request
 from flask_socketio import emit, join_room, leave_room
 from flask_socketio import SocketIO
 
