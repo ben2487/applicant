@@ -37,6 +37,7 @@ const columns: ColumnDef<Run>[] = [
       return (
         <Button
           variant="ghost"
+          className="text-gray-700 hover:bg-gray-100 hover:text-gray-900"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           Date
@@ -77,6 +78,7 @@ const columns: ColumnDef<Run>[] = [
           <Button
             variant="outline"
             size="sm"
+            className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:text-gray-900"
             onClick={() => window.open(`/run/${run.id}`, '_blank')}
           >
             <Eye className="h-4 w-4 mr-1" />
@@ -86,6 +88,7 @@ const columns: ColumnDef<Run>[] = [
             <Button
               variant="outline"
               size="sm"
+              className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:text-gray-900"
               onClick={() => window.open(`/run/${run.id}/live`, '_blank')}
             >
               <Play className="h-4 w-4 mr-1" />
@@ -98,7 +101,11 @@ const columns: ColumnDef<Run>[] = [
   },
 ];
 
-export function RunTable() {
+interface RunTableProps {
+  refreshTrigger?: number;
+}
+
+export function RunTable({ refreshTrigger }: RunTableProps = {}) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -115,39 +122,47 @@ export function RunTable() {
     },
   });
 
-  useEffect(() => {
-    const fetchRuns = async () => {
-      try {
-        const response = await getRuns();
-        setRuns(response.runs);
-      } catch (error) {
-        console.error('Failed to fetch runs:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        
-        if (errorMessage.includes('CONNECTION_ERROR')) {
-          addToast({
-            title: 'Backend Connection Error',
-            description: 'Unable to connect to the backend server. Please check if the server is running.',
-            variant: 'destructive',
-            duration: 10000,
-          });
-        } else {
-          addToast({
-            title: 'Failed to Load Runs',
-            description: errorMessage,
-            variant: 'destructive',
-          });
-        }
-      } finally {
-        setLoading(false);
+  const fetchRuns = async () => {
+    try {
+      const response = await getRuns();
+      setRuns(response.runs);
+    } catch (error) {
+      console.error('Failed to fetch runs:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (errorMessage.includes('CONNECTION_ERROR')) {
+        addToast({
+          title: 'Backend Connection Error',
+          description: 'Unable to connect to the backend server. Please check if the server is running.',
+          variant: 'destructive',
+          duration: 10000,
+        });
+      } else {
+        addToast({
+          title: 'Failed to Load Runs',
+          description: errorMessage,
+          variant: 'destructive',
+        });
       }
-    };
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchRuns();
   }, [addToast]);
 
+  // Refresh runs when refreshTrigger changes
+  useEffect(() => {
+    if (refreshTrigger !== undefined) {
+      console.log('🔄 Refreshing runs due to refresh trigger:', refreshTrigger);
+      fetchRuns();
+    }
+  }, [refreshTrigger]);
+
   if (loading) {
-    return <div className="flex justify-center p-8">Loading runs...</div>;
+    return <div className="flex justify-center p-8 text-gray-900">Loading runs...</div>;
   }
 
   return (
@@ -157,7 +172,7 @@ export function RunTable() {
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <TableHead key={header.id}>
+                <TableHead key={header.id} className="text-gray-900">
                   {header.isPlaceholder
                     ? null
                     : flexRender(
@@ -179,7 +194,7 @@ export function RunTable() {
                 onClick={() => window.open(`/run/${row.original.id}`, '_blank')}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
+                  <TableCell key={cell.id} className="text-gray-900">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}
@@ -187,7 +202,7 @@ export function RunTable() {
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
+              <TableCell colSpan={columns.length} className="h-24 text-center text-gray-900">
                 No runs found.
               </TableCell>
             </TableRow>

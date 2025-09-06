@@ -10,10 +10,25 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useBackendHealth } from '@/hooks/useBackendHealth';
 import { useToaster } from '@/components/ui/toaster';
 
-export function NewApplication() {
+interface NewApplicationProps {
+  onRunStatusChange?: () => void;
+}
+
+export function NewApplication({ onRunStatusChange }: NewApplicationProps = {}) {
   const [url, setUrl] = useState('');
   const [isRunning, setIsRunning] = useState(false);
-  const [currentRun, setCurrentRun] = useState<Run | null>(null);
+  const [currentRun, setCurrentRunState] = useState<Run | null>(null);
+  
+  // Custom setter with comprehensive logging
+  const setCurrentRun = (newRun: Run | null, reason: string) => {
+    console.log('🔧 [DEBUG] setCurrentRun called:', {
+      reason,
+      oldRun: currentRun ? { id: currentRun.id, status: currentRun.result_status } : null,
+      newRun: newRun ? { id: newRun.id, status: newRun.result_status } : null,
+      timestamp: new Date().toISOString()
+    });
+    setCurrentRunState(newRun);
+  };
   const logsEndRef = useRef<HTMLDivElement>(null);
   const { addToast } = useToaster();
   const { isHealthy, isChecking } = useBackendHealth();
@@ -24,6 +39,7 @@ export function NewApplication() {
     events,
     screencastFrame,
     consoleLogs,
+    runError,
     sendControlCommand,
     clearEvents,
   } = useWebSocket(currentRun?.id);
@@ -32,9 +48,101 @@ export function NewApplication() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Track component mount and initial state
   useEffect(() => {
+    console.log('🔧 [DEBUG] NewApplication component mounted with initial state:', {
+      currentRun: currentRun ? { id: currentRun.id, status: currentRun.result_status } : null,
+      isRunning,
+      isConnected,
+      isHealthy,
+      isChecking
+    });
+  }, []); // Empty dependency array - only run on mount
+
+  useEffect(() => {
+    console.log('🔧 [DEBUG] Events or consoleLogs changed:', { eventsCount: events.length, consoleLogsCount: consoleLogs.length });
     scrollToBottom();
   }, [events, consoleLogs]);
+
+  // Track screencast frame changes
+  useEffect(() => {
+    console.log('🔧 [DEBUG] Screencast frame changed:', { length: screencastFrame?.length || 0 });
+  }, [screencastFrame]);
+
+  // Track currentRun changes
+  useEffect(() => {
+    console.log('🔧 [DEBUG] currentRun changed:', currentRun ? { id: currentRun.id, status: currentRun.result_status } : null);
+    console.log('🔧 [DEBUG] Current state summary:', {
+      currentRun: currentRun ? { id: currentRun.id, status: currentRun.result_status } : null,
+      isRunning,
+      isConnected,
+      eventsCount: events.length,
+      consoleLogsCount: consoleLogs.length,
+      screencastFrameLength: screencastFrame?.length || 0,
+      runError: runError ? { status: runError.status, error: runError.error } : null
+    });
+  }, [currentRun, isRunning, isConnected, events.length, consoleLogs.length, screencastFrame?.length, runError]);
+
+  // Track isRunning changes
+  useEffect(() => {
+    console.log('🔧 [DEBUG] isRunning changed:', isRunning);
+  }, [isRunning]);
+
+  // Track WebSocket connection status
+  useEffect(() => {
+    console.log('🔧 [DEBUG] WebSocket connection status changed:', { isConnected, isHealthy });
+  }, [isConnected, isHealthy]);
+
+  // Handle run errors from WebSocket
+  useEffect(() => {
+    if (runError) {
+      console.error('❌ Run error received:', runError);
+      const errorMessage = runError.error?.error || runError.error || 'An error occurred during automation';
+      
+      // Only clear events and stop if this is an actual error, not just termination
+      if (runError.status !== 'TERMINATED') {
+        addToast({
+          title: 'Automation Error',
+          description: errorMessage,
+          variant: 'destructive',
+          duration: 10000,
+        });
+        addToast({
+          title: 'Run Status',
+          description: 'The automation run has been marked as failed and stopped.',
+          variant: 'warning',
+          duration: 8000,
+        });
+        clearEvents();
+        setIsRunning(false);
+        setCurrentRun(null, 'runError: actual error occurred');
+        
+        // Notify parent component that run status changed
+        onRunStatusChange?.();
+      } else {
+        // For termination, show different toasts
+        addToast({
+          title: 'Run Terminated',
+          description: 'The browser automation was terminated (likely by closing the browser window).',
+          variant: 'warning',
+          duration: 8000,
+        });
+        addToast({
+          title: 'Run Status',
+          description: 'The run has been marked as terminated in the database.',
+          variant: 'default',
+          duration: 6000,
+        });
+        // For termination, just clear the error state but keep the run info
+        console.log('🔧 [DEBUG] Setting isRunning to false and currentRun to null (termination)');
+        setIsRunning(false);
+        setCurrentRun(null, 'runError: run was terminated by user');
+        
+        // Notify parent component that run status changed
+        onRunStatusChange?.();
+      }
+    }
+  }, [runError, addToast, clearEvents]);
 
   const handleStartRun = async () => {
     if (!url.trim()) {
@@ -48,17 +156,30 @@ export function NewApplication() {
 
     console.log('🚀 Starting new run with URL:', url);
     try {
+      console.log('🔧 [DEBUG] Setting isRunning to true');
       setIsRunning(true);
+      console.log('🔧 [DEBUG] Clearing events');
       clearEvents();
       
       console.log('📡 Creating run via API...');
+      console.log('🔧 [DEBUG] API call parameters:', { initial_url: url, headless: false });
+      console.log('🔧 [DEBUG] About to call createRun API...');
       const run = await createRun({
         initial_url: url,
         headless: false, // We want to see the browser
       });
-      
+      console.log('🔧 [DEBUG] createRun API call completed, result:', run);
       console.log('✅ Run created successfully:', run);
-      setCurrentRun(run);
+      console.log('🔧 [DEBUG] Run object details:', {
+        id: run?.id,
+        initial_url: run?.initial_url,
+        result_status: run?.result_status,
+        started_at: run?.started_at,
+        runType: typeof run,
+        runKeys: run ? Object.keys(run) : 'null'
+      });
+      console.log('🔧 [DEBUG] Setting currentRun to:', run);
+      setCurrentRun(run, 'handleStartRun: new run created successfully');
       
       addToast({
         title: 'Run Started',
@@ -66,10 +187,20 @@ export function NewApplication() {
         variant: 'success',
       });
       
+      // Notify parent component that run status changed
+      onRunStatusChange?.();
+      
     } catch (error) {
       console.error('❌ Failed to start run:', error);
+      console.log('🔧 [DEBUG] Error details:', {
+        errorType: typeof error,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : 'No stack trace',
+        errorName: error instanceof Error ? error.name : 'Unknown error type'
+      });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
+      // Show multiple toasts for different error scenarios
       if (errorMessage.includes('CONNECTION_ERROR')) {
         addToast({
           title: 'Backend Connection Error',
@@ -77,15 +208,52 @@ export function NewApplication() {
           variant: 'destructive',
           duration: 10000,
         });
+        addToast({
+          title: 'Troubleshooting',
+          description: 'Make sure the backend server is running on port 8000 and try again.',
+          variant: 'warning',
+          duration: 8000,
+        });
+      } else if (errorMessage.includes('Failed to start automation')) {
+        addToast({
+          title: 'Automation Startup Failed',
+          description: 'The browser automation could not be started. This may be due to browser or system issues.',
+          variant: 'destructive',
+          duration: 8000,
+        });
+        addToast({
+          title: 'Browser Issue',
+          description: 'Try restarting the application or check if Chrome/Chromium is properly installed.',
+          variant: 'warning',
+          duration: 6000,
+        });
+      } else if (errorMessage.includes('Invalid URL')) {
+        addToast({
+          title: 'Invalid URL',
+          description: 'The provided URL is not valid. Please check the format and try again.',
+          variant: 'warning',
+          duration: 6000,
+        });
       } else {
         addToast({
           title: 'Failed to Start Run',
           description: errorMessage,
           variant: 'destructive',
+          duration: 8000,
+        });
+        addToast({
+          title: 'Error Details',
+          description: 'Check the console for more detailed error information.',
+          variant: 'warning',
+          duration: 6000,
         });
       }
       
+      console.log('🔧 [DEBUG] Setting isRunning to false due to error');
       setIsRunning(false);
+      
+      // Notify parent component that run status changed (even on error)
+      onRunStatusChange?.();
     }
   };
 
@@ -93,8 +261,9 @@ export function NewApplication() {
     if (currentRun) {
       sendControlCommand('stop');
     }
+    console.log('🔧 [DEBUG] Setting isRunning to false and currentRun to null (stop)');
     setIsRunning(false);
-    setCurrentRun(null);
+    setCurrentRun(null, 'handleStopRun: user clicked stop button');
   };
 
   const handlePauseRun = () => {
@@ -269,6 +438,37 @@ export function NewApplication() {
           </CardContent>
         </Card>
       )}
+
+      {/* DEBUG BLOCK */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>🔍 Debug State</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <pre className="text-xs bg-gray-100 text-gray-900 p-4 rounded overflow-auto" style={{ color: '#111827' }}>
+            {JSON.stringify({
+              url,
+              isRunning,
+              currentRun: currentRun ? {
+                id: currentRun.id,
+                status: currentRun.result_status,
+                url: currentRun.initial_url
+              } : null,
+              isConnected,
+              eventsCount: events.length,
+              consoleLogsCount: consoleLogs.length,
+              screencastFrameLength: screencastFrame?.length || 0,
+              runError: runError ? {
+                error: runError.error,
+                status: runError.status
+              } : null,
+              isHealthy,
+              isChecking
+            }, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
+      
     </div>
   );
 }

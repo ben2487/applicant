@@ -46,6 +46,7 @@ export function useWebSocket(runId?: number) {
   const [status, setStatus] = useState<RunStatus | null>(null);
   const [screencastFrame, setScreencastFrame] = useState<string | null>(null);
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
+  const [runError, setRunError] = useState<any>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -83,8 +84,14 @@ export function useWebSocket(runId?: number) {
     });
 
     newSocket.on('screencast_frame', (data: ScreencastFrame) => {
-      console.log('🖼️ Received screencast frame, size:', data.frame?.length || 0);
+      console.log('🖼️ [VERBOSE] Received screencast frame, size:', data.frame?.length || 0);
+      console.log('🖼️ [VERBOSE] Screencast frame data:', {
+        run_id: data.run_id,
+        timestamp: data.timestamp,
+        frameLength: data.frame?.length || 0
+      });
       setScreencastFrame(data.frame);
+      console.log('✅ [VERBOSE] Screencast frame state updated');
     });
 
     newSocket.on('console_log', (data: ConsoleLog) => {
@@ -100,6 +107,11 @@ export function useWebSocket(runId?: number) {
       console.error('❌ WebSocket error:', error);
     });
 
+    newSocket.on('run_error', (data) => {
+      console.error('❌ Run error received:', data);
+      setRunError(data);
+    });
+
     socketRef.current = newSocket;
     setSocket(newSocket);
 
@@ -110,14 +122,17 @@ export function useWebSocket(runId?: number) {
 
   useEffect(() => {
     if (socket && runId) {
-      console.log(`🚪 Joining run room: ${runId}`);
+      console.log(`🚪 [VERBOSE] Joining run room: ${runId}`);
+      console.log(`🔍 [VERBOSE] Socket connection state:`, socket.connected);
       // Join the run room
       socket.emit('join_run', { run_id: runId });
+      console.log(`✅ [VERBOSE] Join run request sent for run ${runId}`);
 
       return () => {
-        console.log(`🚪 Leaving run room: ${runId}`);
+        console.log(`🚪 [VERBOSE] Leaving run room: ${runId}`);
         // Leave the run room
         socket.emit('leave_run', { run_id: runId });
+        console.log(`✅ [VERBOSE] Leave run request sent for run ${runId}`);
       };
     }
   }, [socket, runId]);
@@ -134,6 +149,7 @@ export function useWebSocket(runId?: number) {
   const clearEvents = () => {
     setEvents([]);
     setConsoleLogs([]);
+    setRunError(null);
   };
 
   return {
@@ -143,6 +159,7 @@ export function useWebSocket(runId?: number) {
     status,
     screencastFrame,
     consoleLogs,
+    runError,
     sendControlCommand,
     clearEvents,
   };

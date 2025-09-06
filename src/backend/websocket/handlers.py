@@ -2,6 +2,7 @@
 
 import json
 import asyncio
+import time
 from typing import Any, Dict, Optional
 
 from flask import request
@@ -24,6 +25,7 @@ class WebSocketManager:
         """
         self.socketio = socketio
         self.active_runs: Dict[int, Dict[str, Any]] = {}
+        self.current_screencast_frames: Dict[int, str] = {}  # Store latest frame for each run
         self.setup_handlers()
     
     def setup_handlers(self):
@@ -36,9 +38,9 @@ class WebSocketManager:
             emit("connected", {"message": "Connected to WebSocket server"})
         
         @self.socketio.on("disconnect")
-        def handle_disconnect():
+        def handle_disconnect(reason=None):
             """Handle client disconnection."""
-            print(f"❌ Client disconnected: {request.sid}")
+            print(f"❌ Client disconnected: {request.sid}, reason: {reason}")
         
         @self.socketio.on("join_run")
         def handle_join_run(data):
@@ -50,16 +52,30 @@ class WebSocketManager:
                 return
             
             room = f"run_{run_id}"
-            print(f"🚪 Client {request.sid} joining room: {room}")
+            print(f"🚪 [VERBOSE] Client {request.sid} joining room: {room}")
+            print(f"🔍 [VERBOSE] Current active runs: {list(self.active_runs.keys())}")
             join_room(room)
             emit("joined_run", {"run_id": run_id, "room": room})
+            print(f"✅ [VERBOSE] Client {request.sid} joined room {room}")
             
             # Send current run status if available
             if run_id in self.active_runs:
-                print(f"📊 Sending current status for run {run_id}")
+                print(f"📊 [VERBOSE] Sending current status for run {run_id}: {self.active_runs[run_id]}")
                 emit("run_status", self.active_runs[run_id])
             else:
-                print(f"ℹ️ No active status found for run {run_id}")
+                print(f"ℹ️ [VERBOSE] No active status found for run {run_id}")
+            
+            # Send current screencast frame if available
+            if run_id in self.current_screencast_frames:
+                frame_data = self.current_screencast_frames[run_id]
+                print(f"🖼️ [VERBOSE] Sending current screencast frame for run {run_id}, size: {len(frame_data)}")
+                emit("screencast_frame", {
+                    "run_id": run_id,
+                    "frame": frame_data,
+                    "timestamp": time.time()
+                })
+            else:
+                print(f"ℹ️ [VERBOSE] No current screencast frame found for run {run_id}")
         
         @self.socketio.on("leave_run")
         def handle_leave_run(data):
@@ -103,11 +119,12 @@ class WebSocketManager:
                 print(f"✅ Control command {command} result: {result}")
                 
                 # Emit status update
+                import time
                 self.emit_run_status(run_id, {
                     'run_id': run_id,
                     'status': result.get('status', 'UNKNOWN'),
                     'message': result.get('message', ''),
-                    'timestamp': self.socketio.server.manager.clock.time()
+                    'timestamp': time.time()
                 })
                 
                 # Emit control acknowledgment
@@ -147,7 +164,10 @@ class WebSocketManager:
         """Emit a run event to all clients monitoring the run."""
         room = f"run_{run_id}"
         print(f"📝 Emitting run event to room {room}: {event_data}")
-        self.socketio.emit("run_event", event_data, room=room)
+        
+        # Ensure datetime objects are serialized to ISO strings
+        serialized_data = self._serialize_event_data(event_data)
+        self.socketio.emit("run_event", serialized_data, room=room)
     
     def emit_run_status(self, run_id: int, status_data: Dict[str, Any]):
         """Emit run status update to all clients monitoring the run."""
@@ -162,12 +182,25 @@ class WebSocketManager:
     def emit_screencast_frame(self, run_id: int, frame_data: str):
         """Emit a screencast frame to all clients monitoring the run."""
         room = f"run_{run_id}"
-        print(f"🖼️ Emitting screencast frame to room {room}, size: {len(frame_data)}")
-        self.socketio.emit("screencast_frame", {
-            "run_id": run_id,
-            "frame": frame_data,
-            "timestamp": self.socketio.server.manager.clock.time()
-        }, room=room)
+        print(f"🖼️ [VERBOSE] Emitting screencast frame to room {room}, size: {len(frame_data)}")
+        print(f"🔍 [VERBOSE] Active runs in WebSocket manager: {list(self.active_runs.keys())}")
+        
+        # Store the latest frame for this run
+        self.current_screencast_frames[run_id] = frame_data
+        print(f"💾 [VERBOSE] Stored latest frame for run {run_id}")
+        
+        try:
+            import time
+            self.socketio.emit("screencast_frame", {
+                "run_id": run_id,
+                "frame": frame_data,
+                "timestamp": time.time()
+            }, room=room)
+            print(f"✅ [VERBOSE] Screencast frame emitted successfully to room {room}")
+        except Exception as e:
+            print(f"❌ [VERBOSE] Error emitting screencast frame: {e}")
+            import traceback
+            print(f"❌ [VERBOSE] Emit error traceback: {traceback.format_exc()}")
     
     def emit_console_log(self, run_id: int, log_data: Dict[str, Any]):
         """Emit console log to all clients monitoring the run."""
@@ -180,13 +213,32 @@ class WebSocketManager:
             "category": log_data.get("category", "CONSOLE")
         }, room=room)
     
+    def _serialize_event_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Serialize event data for JSON transmission."""
+        import datetime
+        
+        serialized = {}
+        for key, value in data.items():
+            if isinstance(value, datetime.datetime):
+                serialized[key] = value.isoformat()
+            elif isinstance(value, dict):
+                serialized[key] = self._serialize_event_data(value)
+            elif isinstance(value, list):
+                serialized[key] = [
+                    self._serialize_event_data(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+            else:
+                serialized[key] = value
+        return serialized
+    
     def emit_run_complete(self, run_id: int, result_data: Dict[str, Any]):
         """Emit run completion event."""
         room = f"run_{run_id}"
         self.socketio.emit("run_complete", {
             "run_id": run_id,
             "result": result_data,
-            "timestamp": self.socketio.server.manager.clock.time()
+            "timestamp": time.time()
         }, room=room)
         
         # Remove from active runs
@@ -199,7 +251,7 @@ class WebSocketManager:
         self.socketio.emit("run_error", {
             "run_id": run_id,
             "error": error_data,
-            "timestamp": self.socketio.server.manager.clock.time()
+            "timestamp": time.time()
         }, room=room)
 
 

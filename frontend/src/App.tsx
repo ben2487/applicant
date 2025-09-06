@@ -9,6 +9,12 @@ import { NewApplication } from '@/components/NewApplication';
 
 function App() {
   const [activeTab, setActiveTab] = useState('applications');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const handleRunStatusChange = () => {
+    console.log('🔄 Run status changed, triggering refresh');
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   return (
     <ToasterProvider>
@@ -62,11 +68,11 @@ function App() {
                   New Application
                 </Button>
               </div>
-              <RunTable />
+              <RunTable refreshTrigger={refreshTrigger} />
             </TabsContent>
 
             <TabsContent value="new" className="space-y-6">
-              <NewApplication />
+              <NewApplication onRunStatusChange={handleRunStatusChange} />
             </TabsContent>
           </Tabs>
         </main>

@@ -27,13 +27,18 @@ def create_app(test_config=None):
     else:
         app.config.update(test_config)
     
-    # Initialize SocketIO
+    # Initialize SocketIO with better error handling
     socketio = SocketIO(
         app,
         cors_allowed_origins="*",
         async_mode="threading",
         logger=True,
-        engineio_logger=True
+        engineio_logger=True,
+        # Add error handling for connection interruptions
+        handle_connection_error=True,
+        # Reduce verbosity of connection errors
+        ping_timeout=60,
+        ping_interval=25
     )
     
     # Initialize WebSocket manager
@@ -48,6 +53,21 @@ def create_app(test_config=None):
     app.register_blueprint(runs_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(console_bp)
+    
+    # Global error handler for WSGI errors
+    @app.errorhandler(Exception)
+    def handle_wsgi_error(error):
+        """Handle WSGI errors gracefully."""
+        # Check if this is the specific Werkzeug error we're seeing
+        if "write() before start_response" in str(error):
+            print(f"🔧 [VERBOSE] Caught Werkzeug WSGI error (likely WebSocket interruption): {error}")
+            # Return a simple response for WebSocket connection errors
+            return "", 204  # No Content
+        else:
+            print(f"❌ [VERBOSE] Unhandled error: {error}")
+            import traceback
+            print(f"❌ [VERBOSE] Error traceback: {traceback.format_exc()}")
+            return {"error": "Internal server error"}, 500
     
     # Health check endpoint
     @app.route("/health")

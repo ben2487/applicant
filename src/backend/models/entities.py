@@ -119,6 +119,7 @@ class RunResultStatus(str):
     IN_PROGRESS = "IN_PROGRESS"
     PAUSED = "PAUSED"
     CANCELLED = "CANCELLED"
+    TERMINATED = "TERMINATED"
 
 
 class EventLevel(str):

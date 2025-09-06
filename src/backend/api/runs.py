@@ -106,8 +106,10 @@ def get_run_artifacts(run_id: int):
 @runs_bp.route("/", methods=["POST"])
 def create_run():
     """Create a new run."""
+    print(f"🚀 [API] create_run endpoint called at {datetime.now().isoformat()}")
     try:
         data = request.get_json()
+        print(f"📥 [API] Request data received: {data}")
         if not data:
             return jsonify({"error": "No data provided"}), 400
         
@@ -117,9 +119,23 @@ def create_run():
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
         
+        # Validate and normalize URL
+        initial_url = data["initial_url"].strip()
+        if not initial_url:
+            return jsonify({"error": "URL cannot be empty"}), 400
+        
+        # Add protocol if missing
+        if not initial_url.startswith(('http://', 'https://')):
+            initial_url = f"https://{initial_url}"
+            print(f"🔧 [VERBOSE] Added https:// prefix to URL: {initial_url}")
+        
+        # Basic URL validation
+        if not ('.' in initial_url.split('://')[-1] if '://' in initial_url else '.' in initial_url):
+            return jsonify({"error": "Invalid URL format"}), 400
+        
         # Create run object
         run_data = {
-            "initial_url": data["initial_url"],
+            "initial_url": initial_url,
             "headless": data.get("headless", False),  # Default to False for web interface
             "application_id": data.get("application_id"),
             "result_status": data.get("result_status", RunResultStatus.IN_PROGRESS),
@@ -131,21 +147,28 @@ def create_run():
         created_run = RunRepository.create(run)
         
         # Start Playwright automation
-        print(f"🎬 Starting Playwright automation for run {created_run.id}...")
-        print(f"🔍 Playwright service browser: {playwright_service.browser}")
-        print(f"🔍 Playwright service playwright: {playwright_service.playwright}")
+        print(f"🎬 [API] Starting Playwright automation for run {created_run.id}...")
+        print(f"🔍 [API] Playwright service browser: {playwright_service.browser}")
+        print(f"🔍 [API] Playwright service playwright: {playwright_service.playwright}")
+        print(f"🔍 [API] Playwright service active_runs: {playwright_service.active_runs}")
         try:
-            print(f"🔍 About to call playwright_service.start_run...")
+            print(f"🔍 [API] About to call playwright_service.start_run...")
+            print(f"🔍 [API] Parameters: run_id={created_run.id}, url={created_run.initial_url}, headless={created_run.headless}")
+            print(f"🔍 [API] Starting asyncio.run() call at {datetime.now().isoformat()}")
+            
+            import time
+            start_time = time.time()
             result = asyncio.run(playwright_service.start_run(
                 created_run.id, 
                 created_run.initial_url, 
                 created_run.headless
             ))
+            end_time = time.time()
             
-            print(f"✅ Playwright automation started successfully: {result}")
+            print(f"✅ [API] Playwright automation started successfully in {end_time - start_time:.2f}s: {result}")
             
             # Emit WebSocket status update
-            print(f"📡 Emitting WebSocket status update for run {created_run.id}...")
+            print(f"📡 [API] Emitting WebSocket status update for run {created_run.id}...")
             ws_manager = get_websocket_manager()
             ws_manager.emit_run_status(created_run.id, {
                 'run_id': created_run.id,
@@ -153,13 +176,37 @@ def create_run():
                 'message': result.get('message', 'Run started'),
                 'timestamp': datetime.now().isoformat()
             })
-            print(f"✅ WebSocket status update emitted")
+            print(f"✅ [API] WebSocket status update emitted")
             
         except Exception as e:
-            print(f"❌ Error starting Playwright automation: {e}")
+            error_message = str(e)
+            print(f"❌ [VERBOSE] Error starting Playwright automation: {error_message}")
+            import traceback
+            print(f"❌ [VERBOSE] Playwright error traceback: {traceback.format_exc()}")
+            
             # Update run status to failed
             RunRepository.update_status(created_run.id, RunResultStatus.FAILED)
             created_run.result_status = RunResultStatus.FAILED
+            
+            # Emit error via WebSocket
+            try:
+                ws_manager = get_websocket_manager()
+                ws_manager.emit_error(created_run.id, {
+                    'run_id': created_run.id,
+                    'error': error_message,
+                    'status': 'FAILED',
+                    'timestamp': datetime.now().isoformat()
+                })
+                print(f"✅ [VERBOSE] Error event emitted via WebSocket for run {created_run.id}")
+            except Exception as ws_error:
+                print(f"⚠️ [VERBOSE] Failed to emit error via WebSocket: {ws_error}")
+            
+            # Return error response
+            return jsonify({
+                "error": "Failed to start automation", 
+                "details": error_message,
+                "run_id": created_run.id
+            }), 500
         
         run_dict = created_run.dict()
         # Convert datetime objects to ISO format
@@ -170,6 +217,7 @@ def create_run():
         if run_dict.get("created_at"):
             run_dict["created_at"] = run_dict["created_at"].isoformat()
         
+        print(f"📤 [API] Returning successful response for run {created_run.id} at {datetime.now().isoformat()}")
         return jsonify(run_dict), 201
     except ValidationError as e:
         return jsonify({"error": "Validation error", "details": e.errors()}), 400

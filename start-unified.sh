@@ -179,9 +179,15 @@ if lsof -ti:3000 >/dev/null 2>&1; then
     exit 1
 fi
 
+# Create temporary log directory
+LOG_DIR="/tmp/logtmp$(date +%s)"
+echo -e "${SYSTEM_PREFIX} Creating log directory: ${LOG_DIR}"
+rm -rf "$LOG_DIR" 2>/dev/null || true
+mkdir -p "$LOG_DIR"
+
 # Start Flask backend in background
 echo -e "${BACKEND_PREFIX} Starting Flask backend on port 8000..."
-DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=True)" 2>&1 | python3 log_forwarder.py --prefix "${BACKEND_PREFIX}" &
+DATABASE_URL="postgresql://localhost/webbot" poetry run python -c "from src.backend.app import create_app; app = create_app(); app.run(host='0.0.0.0', port=8000, debug=True)" 2>&1 | tee "$LOG_DIR/backend.log" | python3 log_forwarder.py --prefix "${BACKEND_PREFIX}" &
 BACKEND_PID=$!
 
 # Wait for backend to start
@@ -199,7 +205,7 @@ fi
 # Start React frontend in background
 echo -e "${FRONTEND_PREFIX} Starting React frontend on port 3000..."
 cd frontend
-npm run dev 2>&1 | python3 ../log_forwarder.py --prefix "${FRONTEND_PREFIX}" &
+npm run dev 2>&1 | tee "$LOG_DIR/frontend.log" | python3 ../log_forwarder.py --prefix "${FRONTEND_PREFIX}" &
 FRONTEND_PID=$!
 cd ..
 
@@ -218,6 +224,7 @@ fi
 echo -e "${SYSTEM_PREFIX} 🎉 WebBot is now running!"
 echo -e "${SYSTEM_PREFIX} Frontend: http://localhost:3000"
 echo -e "${SYSTEM_PREFIX} Backend API: http://localhost:8000"
+echo -e "${SYSTEM_PREFIX} Log files: ${LOG_DIR}/"
 echo -e "${SYSTEM_PREFIX} Press Ctrl+C to stop both servers"
 echo ""
 
@@ -238,6 +245,7 @@ cleanup() {
     lsof -ti:8000 | xargs kill -9 2>/dev/null || true
     lsof -ti:3000 | xargs kill -9 2>/dev/null || true
     
+    echo -e "${SYSTEM_PREFIX} Log files preserved at: ${LOG_DIR}/"
     echo -e "${SYSTEM_PREFIX} Servers stopped."
     exit 0
 }
